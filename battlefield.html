@@ -284,7 +284,7 @@
 <body>
 
 <div id="app">
-  <a id="nav-back" href="index.html">☰ Codex</a>
+  <a id="nav-back" href="deploy.html">🛡 Deploy</a>
   <div id="toast-log"></div>
 
   <div id="enemy-zone">
@@ -439,10 +439,52 @@ let playerHeroes = [];
 let enemyRangedHeroes = [];
 let enemyMeleeHeroes = [];
 
+// A squad saved by deploy.html looks like { back: [id|null, ...5],
+// front: [{charId, band}, ...up to 5] } — back is always Ranged (fixed
+// slots), front is always Melee (aligned/boundary band, same shape the
+// battle engine already expects as `coverage`... except a deployed squad
+// has no "filled ranged lanes" concept the way the enemy's fixed
+// lane0/boundary/lane1 pattern does, so coverage here is resolved once,
+// at deploy time, from the same band + back-fill math deploy.html uses.
+function loadDeployedPlayerSquad() {
+  let raw;
+  try { raw = localStorage.getItem('warOfShards.playerSquad'); } catch (e) { return null; }
+  if (!raw) return null;
+  try {
+    const saved = JSON.parse(raw);
+    if (!saved || !Array.isArray(saved.back) || !Array.isArray(saved.front)) return null;
+    const filledMask = saved.back.map(id => id !== null && id !== undefined);
+    const list = [];
+    saved.back.forEach((id, laneIndex) => {
+      if (id) list.push(createHero(charById(id), 'player', { laneIndex }));
+    });
+    saved.front.forEach(entry => {
+      if (!entry || !entry.charId) return;
+      const band = entry.band;
+      let coverage = null;
+      if (band) {
+        if (band.type === 'aligned') {
+          coverage = filledMask[band.index] ? { type: 'aligned', lane: band.index } : null;
+        } else {
+          const [a, b] = band.indices;
+          if (filledMask[a] && filledMask[b]) coverage = { type: 'boundary', lanes: [a, b] };
+          else if (filledMask[a]) coverage = { type: 'aligned', lane: a };
+          else if (filledMask[b]) coverage = { type: 'aligned', lane: b };
+        }
+      }
+      list.push(createHero(charById(entry.charId), 'player', { coverage }));
+    });
+    return list.length > 0 ? list : null;
+  } catch (e) {
+    return null;
+  }
+}
+
 function buildArmies() {
-  const playerSquad = buildRandomSquad();
+  const deployed = loadDeployedPlayerSquad();
+  playerHeroes = deployed || buildSquadHeroes(buildRandomSquad(), 'player');
+
   const enemySquad = buildRandomSquad();
-  playerHeroes = buildSquadHeroes(playerSquad, 'player');
   const enemyAll = buildSquadHeroes(enemySquad, 'enemy');
   enemyRangedHeroes = enemyAll.filter(h => h.type === 'ranged');
   enemyMeleeHeroes = enemyAll.filter(h => h.type === 'melee');
