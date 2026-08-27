@@ -69,6 +69,31 @@
     font-weight: bold;
   }
 
+  .clear-btn {
+    display: none;
+    align-items: center;
+    gap: 5px;
+    background: #3a1e1e;
+    border: 1px solid #e74c3c;
+    color: #ff8a8a;
+    border-radius: 14px;
+    padding: 5px 11px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .clear-btn.visible { display: inline-flex; }
+  .clear-btn .clear-count {
+    background: #e74c3c;
+    color: #fff;
+    border-radius: 10px;
+    padding: 0 6px;
+    min-width: 14px;
+    line-height: 1.5;
+    text-align: center;
+    font-size: 0.62rem;
+  }
+
   #count {
     width: 100%;
     max-width: 640px;
@@ -215,6 +240,7 @@
 
   <div class="controls">
     <input type="text" id="search" placeholder="Search name or ability...">
+    <button id="clear-btn" class="clear-btn" type="button">Clear <span class="clear-count" id="clear-count"></span></button>
   </div>
   <div class="controls" id="type-filters"></div>
   <div class="controls" id="color-filters"></div>
@@ -258,6 +284,38 @@
     colorBar.querySelectorAll('.chip').forEach(el => {
       el.addEventListener('click', () => { state.color = el.dataset.color; render(); });
     });
+  }
+
+  function refreshChipStates() {
+    document.querySelectorAll('#type-filters .chip').forEach(el => {
+      el.classList.toggle('active', el.dataset.type === state.type);
+    });
+    document.querySelectorAll('#color-filters .chip').forEach(el => {
+      el.classList.toggle('active', el.dataset.color === state.color);
+    });
+  }
+
+  function activeFilterCount() {
+    let n = 0;
+    if (state.type !== 'all') n++;
+    if (state.color !== 'all') n++;
+    if (state.search) n++;
+    return n;
+  }
+
+  function updateClearButton() {
+    const btn = document.getElementById('clear-btn');
+    const n = activeFilterCount();
+    document.getElementById('clear-count').textContent = n;
+    btn.classList.toggle('visible', n > 0);
+  }
+
+  function clearFilters() {
+    state.search = '';
+    state.type = 'all';
+    state.color = 'all';
+    document.getElementById('search').value = '';
+    render();
   }
 
   function charMatches(c) {
@@ -337,12 +395,17 @@
 
     countEl.textContent = `Showing ${shown} of ${CHARACTERS.length} characters`;
     emptyEl.style.display = shown === 0 ? 'block' : 'none';
+
+    refreshChipStates();
+    updateClearButton();
   }
 
   document.getElementById('search').addEventListener('input', (e) => {
     state.search = e.target.value.trim();
     render();
   });
+
+  document.getElementById('clear-btn').addEventListener('click', clearFilters);
 
   buildFilterBar();
   render();
