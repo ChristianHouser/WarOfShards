@@ -107,6 +107,13 @@
     font-size: 0.78rem;
     cursor: pointer;
   }
+  .info-body { text-align: left; font-size: 0.72rem; color: #ddd; line-height: 1.5; }
+  .info-body .info-name { font-size: 0.95rem; font-weight: bold; color: #fff; }
+  .info-body .info-title { font-size: 0.72rem; color: #bbb; font-style: italic; margin-bottom: 4px; }
+  .info-body .info-stat-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+  .info-body .info-pill { background: #111a2e; border: 1px solid #333; border-radius: 5px; padding: 2px 7px; font-size: 0.68rem; }
+  .info-body .info-ability { background: #0d0d1a; border: 1px solid #333; border-radius: 6px; padding: 6px 8px; margin-top: 6px; font-size: 0.68rem; }
+  .info-body .info-ability .ia-name { font-weight: bold; color: #ffd700; }
 
   /* ===== PLACEMENT ZONE (small — just shows where cards go) ===== */
   #placement-zone {
@@ -193,7 +200,7 @@
   }
   .mini-card .mc-dot {
     position: absolute;
-    top: 2px; right: 2px;
+    top: 2px; left: 2px;
     width: 6px; height: 6px;
     border-radius: 50%;
     border: 1px solid #000;
@@ -210,6 +217,24 @@
     width: 40px;
   }
   .mini-card .mc-cov { font-size: 0.34rem; color: #9be; line-height: 1; }
+
+  .mc-remove-btn {
+    position: absolute;
+    top: 50%; right: 1px;
+    transform: translateY(-50%);
+    width: 13px; height: 13px;
+    line-height: 11px;
+    border-radius: 50%;
+    background: #3a1e1e;
+    border: 1px solid #e74c3c;
+    color: #ff8a8a;
+    font-size: 0.6rem;
+    font-weight: bold;
+    text-align: center;
+    cursor: pointer;
+    padding: 0;
+    z-index: 2;
+  }
 
   .mini-slot.drop-target-hover, .mini-card.drop-target-hover {
     box-shadow: 0 0 0 2px #ffd700, 0 0 8px #ffd70088;
@@ -252,6 +277,7 @@
 
   .roster-card {
     aspect-ratio: 1 / 1;
+    position: relative;
     background: #22223a;
     border: 2px solid #444;
     border-radius: 8px;
@@ -265,6 +291,30 @@
     cursor: grab;
     touch-action: none;
     user-select: none;
+  }
+  .card-icon-btn {
+    position: absolute;
+    top: 3px;
+    width: 16px; height: 16px;
+    line-height: 14px;
+    border-radius: 50%;
+    font-size: 0.62rem;
+    font-weight: bold;
+    text-align: center;
+    cursor: pointer;
+    z-index: 2;
+  }
+  .card-icon-btn.info-btn {
+    left: 3px;
+    background: #16213e;
+    border: 1px solid #4a7ab5;
+    color: #9be;
+  }
+  .card-icon-btn.add-btn {
+    right: 3px;
+    background: #1f5c2e;
+    border: 1px solid #8fe0a0;
+    color: #8fe0a0;
   }
   .roster-card[data-color="red"]    { background: linear-gradient(160deg, #3a1e1e, #22223a 70%); }
   .roster-card[data-color="green"]  { background: linear-gradient(160deg, #1a331a, #22223a 70%); }
@@ -373,6 +423,13 @@
   </div>
 </div>
 
+<div id="info-modal" class="modal">
+  <div class="modal-box">
+    <div id="info-body" class="info-body"></div>
+    <button class="modal-btn cancel" id="btn-info-close">Close</button>
+  </div>
+</div>
+
 <div id="toast-log"></div>
 
 <script src="characters.js"></script>
@@ -386,8 +443,8 @@
 // x/left/right swapped in for the prototype's y/top/bottom.
 
 const COLOR_HEX = { red: '#e74c3c', green: '#2ecc71', blue: '#3498db', yellow: '#f1c40f', purple: '#9b59b6' };
-const BACK_SLOTS = 5;   // fixed, always-visible — like the prototype's Ranged slots
-const FRONT_CAP = 5;    // free-banded, like the prototype's Melee, now with its own dedicated cap
+const BACK_SLOTS = 5;      // fixed, always-visible — like the prototype's Ranged slots
+const MAX_DEPLOYED = 5;    // shared cap across Back + Front combined — matches the prototype's TEAM_CAP
 const BOUNDARY_FRACTION = 0.6; // 60% of the pitch between two slot centers counts as a "straddle" zone
 
 function charById(id) { return CHARACTERS.find(c => c.id === id); }
@@ -414,7 +471,7 @@ function placedCount() {
 
 function updateStatus() {
   const n = placedCount();
-  document.getElementById('deploy-status').textContent = `${n} of ${BACK_SLOTS + FRONT_CAP} deployed`;
+  document.getElementById('deploy-status').textContent = `${n} of ${MAX_DEPLOYED} deployed`;
   const btn = document.getElementById('nav-battle');
   btn.classList.toggle('disabled', n === 0);
 }
@@ -483,6 +540,8 @@ function renderRosterGrid() {
     card.className = 'roster-card';
     card.dataset.color = cd.color;
     card.innerHTML = `
+      <button class="card-icon-btn info-btn" type="button" title="Character info">ℹ</button>
+      <button class="card-icon-btn add-btn" type="button" title="Add to squad">+</button>
       <div class="rc-dot" style="background:${COLOR_HEX[cd.color]}"></div>
       <div class="rc-name">${cd.name}${cd.isSpecial ? ' ★' : ''}</div>
       <div class="rc-sub">${cd.type === 'ranged' ? '🏹' : '⚔️'} ${cd.class}<br>${cd.hp} HP</div>
@@ -492,9 +551,72 @@ function renderRosterGrid() {
     } else {
       card.addEventListener('pointerdown', (e) => startFrontDrag(e, { charId: id, frontIndex: null }));
     }
+    card.querySelector('.info-btn').addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      showInfoModal(cd);
+    });
+    card.querySelector('.add-btn').addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      quickAddCharacter(id);
+    });
     root.appendChild(card);
   });
 }
+
+// Tap-to-add alternative to dragging: places a Ranged character in the
+// first empty Back slot, or a Melee character onto the Front zone with a
+// default aligned band (the player can still drag it afterward to
+// reposition or straddle). Respects the same shared MAX_DEPLOYED cap as a
+// drag placement would.
+function quickAddCharacter(id) {
+  if (placedCount() >= MAX_DEPLOYED) {
+    log(`Squad is full (max ${MAX_DEPLOYED}).`);
+    return;
+  }
+  const cd = charById(id);
+  if (cd.type === 'ranged') {
+    const slot = playerPlacements.back.findIndex(x => x == null);
+    if (slot === -1) { log('No empty Back spot — drag to swap one out.'); return; }
+    playerPlacements.back[slot] = id;
+  } else {
+    const band = { type: 'aligned', index: playerPlacements.front.length % BACK_SLOTS };
+    playerPlacements.front.push({ charId: id, band });
+  }
+  deployAvailable = deployAvailable.filter(x => x !== id);
+  renderRosterGrid();
+  renderPlacementZone();
+  updateStatus();
+}
+
+function showInfoModal(cd) {
+  const body = document.getElementById('info-body');
+  const specialBlock = cd.isSpecial ? `
+    <div class="info-ability">
+      <span class="ia-name">${cd.abilityName || 'Special'}</span> (5 mana)<br>
+      ${cd.abilityText || 'Deals 2 damage.'}
+    </div>` : '';
+  body.innerHTML = `
+    <div class="info-name">${cd.name}${cd.isSpecial ? ' ★' : ''}</div>
+    ${cd.title ? `<div class="info-title">${cd.title}</div>` : ''}
+    <div class="info-stat-row">
+      <span class="info-pill">${cd.type === 'ranged' ? '🏹 Ranged' : '⚔️ Melee'}</span>
+      <span class="info-pill">${cd.class}</span>
+      <span class="info-pill">❤ HP ${cd.hp}</span>
+      <span class="info-pill">${cd.damageType}</span>
+      <span class="info-pill">${cd.weapon}</span>
+    </div>
+    <div class="info-ability">
+      <span class="ia-name">Basic Attack</span> (${basicCostFor(cd)} mana) — deal ${basicDmgFor(cd)} damage.
+    </div>
+    ${specialBlock}
+  `;
+  document.getElementById('info-modal').classList.add('show');
+}
+document.getElementById('btn-info-close').addEventListener('click', () => {
+  document.getElementById('info-modal').classList.remove('show');
+});
 
 // ---------- PLACEMENT ZONE ----------
 function coverageLabel(coverage) {
@@ -516,7 +638,7 @@ function resolveCoverage(band, filledMask) {
   return null;
 }
 
-function buildMiniCard(cd, extraClass) {
+function buildMiniCard(cd, extraClass, onRemove) {
   const card = document.createElement('div');
   card.className = `mini-card ${extraClass || ''}` + (cd.isSpecial ? ' special' : '');
   card.dataset.color = cd.color;
@@ -525,6 +647,19 @@ function buildMiniCard(cd, extraClass) {
     <div class="mc-icon">${cd.type === 'ranged' ? '🏹' : '⚔️'}</div>
     <div class="mc-name">${cd.name}</div>
   `;
+  if (onRemove) {
+    const removeBtn = document.createElement('button');
+    removeBtn.className = 'mc-remove-btn';
+    removeBtn.type = 'button';
+    removeBtn.title = 'Remove from squad';
+    removeBtn.textContent = '−';
+    removeBtn.addEventListener('pointerdown', (e) => {
+      e.stopPropagation();
+      e.preventDefault();
+      onRemove();
+    });
+    card.appendChild(removeBtn);
+  }
   return card;
 }
 
@@ -539,7 +674,7 @@ function renderPlacementZone() {
     const id = playerPlacements.back[i];
     let el;
     if (id) {
-      el = buildMiniCard(charById(id));
+      el = buildMiniCard(charById(id), '', () => unplaceBack(i));
       el.style.cursor = 'grab';
       el.addEventListener('pointerdown', (e) => startBackDrag(e, { charId: id, fromSlot: i }));
     } else {
@@ -558,7 +693,7 @@ function renderPlacementZone() {
   const filledMask = playerPlacements.back.map(id => id !== null);
   playerPlacements.front.forEach((entry, i) => {
     const cd = charById(entry.charId);
-    const card = buildMiniCard(cd, 'front-card');
+    const card = buildMiniCard(cd, 'front-card', () => unplaceFront(i));
     card.dataset.frontIndex = i;
     card.style.cursor = 'grab';
     const coverage = resolveCoverage(entry.band, filledMask);
@@ -729,6 +864,10 @@ function onBackDragEnd(e) {
     playerPlacements.back[fromSlot] = null;
     playerPlacements.back[targetSlot] = charId;
   } else {
+    if (placedCount() >= MAX_DEPLOYED) {
+      log(`Squad is full (max ${MAX_DEPLOYED}).`);
+      return;
+    }
     playerPlacements.back[targetSlot] = charId;
     deployAvailable = deployAvailable.filter(id => id !== charId);
   }
@@ -797,8 +936,8 @@ function onFrontDragEnd(e) {
   if (dragState.frontIndex != null) {
     playerPlacements.front[dragState.frontIndex].band = band;
   } else {
-    if (playerPlacements.front.length >= FRONT_CAP) {
-      log(`Front is full (max ${FRONT_CAP}).`);
+    if (placedCount() >= MAX_DEPLOYED) {
+      log(`Squad is full (max ${MAX_DEPLOYED}).`);
       dragState = null;
       return;
     }
@@ -834,6 +973,7 @@ function shuffledCopy(arr) {
 
 function fillEmptySlotsFromRoster() {
   for (let i = 0; i < BACK_SLOTS; i++) {
+    if (placedCount() >= MAX_DEPLOYED) break;
     if (playerPlacements.back[i] != null) continue;
     const pool = shuffledCopy(deployAvailable.filter(id => charById(id).type === 'ranged'));
     if (pool.length === 0) continue;
@@ -841,7 +981,7 @@ function fillEmptySlotsFromRoster() {
     playerPlacements.back[i] = id;
     deployAvailable = deployAvailable.filter(x => x !== id);
   }
-  while (playerPlacements.front.length < FRONT_CAP) {
+  while (placedCount() < MAX_DEPLOYED) {
     const pool = shuffledCopy(deployAvailable.filter(id => charById(id).type === 'melee'));
     if (pool.length === 0) break;
     const id = pool[0];
