@@ -214,7 +214,7 @@
   .mini-card.front-card {
     position: absolute;
     top: 1px;
-    width: 40px;
+    /* width is set inline in JS to match the Back row's slot size */
   }
   .mini-card .mc-cov { font-size: 0.34rem; color: #9be; line-height: 1; }
 
@@ -288,8 +288,6 @@
     justify-content: center;
     text-align: center;
     overflow: hidden;
-    cursor: grab;
-    touch-action: none;
     user-select: none;
   }
   .card-icon-btn {
@@ -546,11 +544,8 @@ function renderRosterGrid() {
       <div class="rc-name">${cd.name}${cd.isSpecial ? ' ★' : ''}</div>
       <div class="rc-sub">${cd.type === 'ranged' ? '🏹' : '⚔️'} ${cd.class}<br>${cd.hp} HP</div>
     `;
-    if (cd.type === 'ranged') {
-      card.addEventListener('pointerdown', (e) => startBackDrag(e, { charId: id, fromSlot: null }));
-    } else {
-      card.addEventListener('pointerdown', (e) => startFrontDrag(e, { charId: id, frontIndex: null }));
-    }
+    // Roster cards are tap-only (info / add) — dragging is reserved for
+    // cards already in the deployed section, where it repositions them.
     card.querySelector('.info-btn').addEventListener('pointerdown', (e) => {
       e.stopPropagation();
       e.preventDefault();
@@ -687,7 +682,13 @@ function renderPlacementZone() {
     backRow.appendChild(el);
   }
 
+  // Front cards must render at the same size as Back cards. Back slots are
+  // square via aspect-ratio against a flex-computed width, so measure one
+  // now (post-append, so layout is real) and apply it to both the Front
+  // zone's height and every Front card's width/height.
+  const slotSize = backRow.children[0].getBoundingClientRect().width;
   const frontZone = document.getElementById('front-zone');
+  frontZone.style.height = (slotSize + 4) + 'px';
   frontZone.innerHTML = '';
   frontZone.dataset.role = 'front-dropzone';
   const filledMask = playerPlacements.back.map(id => id !== null);
@@ -696,6 +697,7 @@ function renderPlacementZone() {
     const card = buildMiniCard(cd, 'front-card', () => unplaceFront(i));
     card.dataset.frontIndex = i;
     card.style.cursor = 'grab';
+    card.style.width = slotSize + 'px';
     const coverage = resolveCoverage(entry.band, filledMask);
     const cov = document.createElement('div');
     cov.className = 'mc-cov';
