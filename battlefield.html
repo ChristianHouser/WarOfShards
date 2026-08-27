@@ -1,0 +1,1022 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, viewport-fit=cover">
+<title>War of Shards — Battlefield</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { height: 100%; overflow: hidden; }
+  body {
+    font-family: system-ui, -apple-system, sans-serif;
+    background: #10101c;
+    color: #eee;
+  }
+
+  #app {
+    display: flex;
+    flex-direction: column;
+    height: 100vh;
+    height: 100dvh;
+    width: 100vw;
+    max-width: 560px;
+    margin: 0 auto;
+    background: #1a1a2e;
+  }
+
+  #nav-back {
+    position: absolute;
+    top: 6px; left: 6px;
+    z-index: 20;
+    background: #0f3460cc;
+    color: #ffd700;
+    border: 1px solid #ffd700;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    text-decoration: none;
+  }
+
+  #toast-log {
+    position: absolute;
+    top: 6px;
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 30;
+    max-width: 92%;
+    background: #000000cc;
+    color: #9f9;
+    border: 1px solid #333;
+    border-radius: 8px;
+    padding: 5px 10px;
+    font-size: 0.68rem;
+    text-align: center;
+    opacity: 0;
+    transition: opacity 0.3s;
+    pointer-events: none;
+  }
+  #toast-log.show { opacity: 1; }
+
+  #win-banner {
+    position: fixed;
+    inset: 0;
+    z-index: 50;
+    background: #000000aa;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    text-align: center;
+    font-size: 1.3rem;
+    font-weight: bold;
+    color: #ffd700;
+    text-shadow: 0 0 10px #000;
+  }
+  #win-banner.show { display: flex; }
+
+  /* ===== ZONES ===== */
+  #enemy-zone {
+    flex: 0 0 50%;
+    display: flex;
+    flex-direction: column;
+    padding: 22px 6px 4px;
+    border-bottom: 2px solid #0f3460;
+    min-height: 0;
+  }
+  #board-zone {
+    flex: 0 0 38%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 6px 8px;
+    background: #142042;
+    min-height: 0;
+  }
+  #hero-zone {
+    flex: 0 0 12%;
+    display: flex;
+    flex-direction: column;
+    padding: 4px 6px;
+    border-top: 2px solid #0f3460;
+    min-height: 0;
+  }
+
+  .zone-label {
+    font-size: 0.62rem;
+    text-align: center;
+    color: #f5576c;
+    font-weight: bold;
+    letter-spacing: 1px;
+    text-transform: uppercase;
+    flex-shrink: 0;
+    margin-bottom: 2px;
+  }
+
+  .hero-row {
+    display: flex;
+    gap: 4px;
+    flex: 1;
+    min-height: 0;
+  }
+
+  /* ===== HERO / ENEMY CARDS ===== */
+  .card {
+    flex: 1 1 0;
+    min-width: 0;
+    height: 100%;
+    border-radius: 8px;
+    background: #2a2a4a;
+    border: 2px solid #555;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 1px;
+    padding: 2px;
+    position: relative;
+    user-select: none;
+    overflow: hidden;
+  }
+  .card.special { border-color: #c0c0c0; box-shadow: 0 0 6px #c0c0c088; }
+  .card.dead { opacity: 0.25; filter: grayscale(1); }
+  .card.gained { animation: manaFlash 0.6s ease; }
+  @keyframes manaFlash {
+    0% { box-shadow: 0 0 0 0 #00ffaa; }
+    40% { box-shadow: 0 0 16px 4px #00ffaa; transform: scale(1.06); }
+    100% { box-shadow: none; transform: scale(1); }
+  }
+  .card[data-color="red"]    { background: linear-gradient(160deg, #4a2020, #2a2a4a); }
+  .card[data-color="green"]  { background: linear-gradient(160deg, #1a3a1a, #2a2a4a); }
+  .card[data-color="blue"]   { background: linear-gradient(160deg, #1a2a4a, #2a2a4a); }
+  .card[data-color="yellow"] { background: linear-gradient(160deg, #4a3a10, #2a2a4a); }
+  .card[data-color="purple"] { background: linear-gradient(160deg, #3a1a4a, #2a2a4a); }
+
+  .card-color-dot {
+    position: absolute;
+    top: 2px; right: 2px;
+    width: 9px; height: 9px;
+    border-radius: 50%;
+    border: 1px solid #000;
+  }
+  .card-icon { font-size: 0.9rem; line-height: 1; flex-shrink: 0; }
+  .card-name {
+    font-size: 0.5rem;
+    line-height: 1.1;
+    color: #eee;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    text-align: center;
+    font-weight: 600;
+    flex-shrink: 0;
+  }
+  .hp-text {
+    font-size: 0.56rem;
+    line-height: 1;
+    color: #f88;
+    font-weight: bold;
+    flex-shrink: 0;
+  }
+  .mana-bar-bg {
+    width: 90%;
+    height: 9px;
+    background: #0a0a12;
+    border-radius: 4px;
+    overflow: hidden;
+    border: 1px solid #555;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .mana-bar {
+    height: 100%;
+    width: 0%;
+    background: linear-gradient(90deg, #00e5ff, #00a0ff);
+    transition: width 0.35s ease-out;
+  }
+  .card.enemy .mana-bar { background: linear-gradient(90deg, #f5576c, #f093fb); }
+  .mana-num {
+    position: absolute;
+    left: 0; right: 0; top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.5rem;
+    font-weight: 800;
+    color: #fff;
+    text-shadow: 0 1px 2px #000;
+    text-align: center;
+  }
+  .coverage-tag {
+    font-size: 0.44rem;
+    color: #9be;
+    line-height: 1;
+    flex-shrink: 0;
+  }
+
+  /* ===== MATCH-3 BOARD ===== */
+  #board-wrap {
+    width: 100%;
+    height: 100%;
+    max-width: 480px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  #board-wrap.locked { opacity: 0.55; }
+  #board {
+    display: grid;
+    grid-template-columns: repeat(7, 1fr);
+    grid-template-rows: repeat(5, 1fr);
+    gap: 3px;
+    width: 100%;
+    height: 100%;
+  }
+  .tile {
+    border-radius: 6px;
+    cursor: pointer;
+    transition: transform 0.15s, opacity 0.25s, background 0.2s;
+    border: 2px solid transparent;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 0.9rem;
+    font-weight: bold;
+    color: rgba(0,0,0,0.35);
+    user-select: none;
+  }
+  .tile.empty { background: #1a1a2e; border: 1px dashed #333; cursor: default; opacity: 0.4; }
+  .tile.selected { border-color: #fff; transform: scale(1.08); z-index: 2; box-shadow: 0 0 10px #fff8; }
+  .tile.red    { background: #e74c3c; }
+  .tile.green  { background: #2ecc71; }
+  .tile.blue   { background: #3498db; }
+  .tile.yellow { background: #f1c40f; }
+  .tile.purple { background: #9b59b6; }
+  .tile.special-bomb    { box-shadow: 0 0 0 2px #ff8c00, inset 0 0 10px rgba(0,0,0,0.5); }
+  .tile.special-crystal { box-shadow: 0 0 0 2px #e0d0ff, inset 0 0 10px rgba(255,255,255,0.4); }
+
+  /* ===== MODAL ===== */
+  .modal {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal.show { display: flex; }
+  .modal-box {
+    background: #1e1e3f;
+    border: 2px solid #e0d0ff;
+    border-radius: 12px;
+    padding: 16px;
+    max-width: 300px;
+    width: 90%;
+    text-align: center;
+  }
+  .modal-title { font-weight: bold; margin-bottom: 12px; color: #e0d0ff; font-size: 0.85rem; }
+  .modal-btn {
+    display: block; width: 100%; margin: 8px 0; padding: 10px;
+    color: white; border: none; border-radius: 6px; font-size: 0.85rem; cursor: pointer;
+  }
+  .modal-btn.clear { background: #9b59b6; }
+  .modal-btn.wave  { background: #e74c3c; }
+</style>
+</head>
+<body>
+
+<div id="app">
+  <a id="nav-back" href="index.html">☰ Codex</a>
+  <div id="toast-log"></div>
+
+  <div id="enemy-zone">
+    <div class="zone-label">⚔ Enemy</div>
+    <div id="enemy-ranged-row" class="hero-row"></div>
+    <div id="enemy-melee-row" class="hero-row"></div>
+  </div>
+
+  <div id="board-zone">
+    <div id="board-wrap">
+      <div id="board"></div>
+    </div>
+  </div>
+
+  <div id="hero-zone">
+    <div id="player-hero-row" class="hero-row"></div>
+  </div>
+</div>
+
+<div id="win-banner"></div>
+
+<!-- Runic Crystal Choice Modal -->
+<div id="crystal-modal" class="modal">
+  <div class="modal-box">
+    <div id="crystal-modal-title" class="modal-title"></div>
+    <button id="btn-crystal-clear" class="modal-btn clear">Clear All Tiles of This Color</button>
+    <button id="btn-crystal-wave" class="modal-btn wave">🔮 Runic Wave (attack)</button>
+  </div>
+</div>
+
+<script src="characters.js"></script>
+<script>
+// BASIC_COST, BASIC_DMG, SPECIAL_COST, SPECIAL_DMG, maxManaFor, CHARACTERS come from characters.js.
+//
+// This screen is the match-3 half of the battlefield, ported from the
+// War-of-Shards prototype's Match_3_game.html: tile movement, matching,
+// gravity/refill, and the two special tiles (Arcane Bomb, Runic Crystal)
+// behave exactly as they did there. What's NOT here yet is the prototype's
+// turn-based attack system (tap a hero -> pick Basic/Special -> tap a
+// target) — for now every match just pays mana to your heroes below and,
+// via bombs/crystals, damages the enemy squad above. Wiring up player
+// attacks (and enemy counter-attacks) is the natural next step.
+//
+// Layout is new: the prototype placed player vs enemy in left/right
+// columns split by type (Ranged/Melee). Here the enemy squad sits in a
+// top-down arrangement instead — Ranged row furthest back, Melee row in
+// front (closer to the board, "guarding" it) — and the player's squad is
+// a single row of cards below the board, since that's all the reserved
+// screen space allows.
+
+const COLORS = ['red', 'green', 'blue', 'yellow', 'purple'];
+const COLOR_HEX = { red: '#e74c3c', green: '#2ecc71', blue: '#3498db', yellow: '#f1c40f', purple: '#9b59b6' };
+const COLS = 7;
+const ROWS = 5;
+const TEAM_SIZE = 5; // 2 Ranged + 3 Melee per side, same shape as the prototype's TEAM_CAP
+
+// ---------- RANDOM SQUAD GENERATION ----------
+// No deployment/selection screen yet, so both sides get an auto-drawn squad
+// using the same constraints the prototype used for its enemy team: exactly
+// 2 Ranged + 3 Melee, at most 2 Heroes (isSpecial) among the 5, and at least
+// 4 distinct colors represented.
+function shuffledCopy(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+function pickN(pool, n) { return shuffledCopy(pool).slice(0, n); }
+function randomIntUpTo(maxInclusive) { return Math.floor(Math.random() * (maxInclusive + 1)); }
+function charById(id) { return CHARACTERS.find(c => c.id === id); }
+
+function drawSquad(buckets) {
+  const RANGED_COUNT = 2, MELEE_COUNT = 3, MAX_HEROES = 2;
+  const heroCount = randomIntUpTo(MAX_HEROES);
+  const rangedHeroCount = randomIntUpTo(heroCount);
+  const meleeHeroCount = heroCount - rangedHeroCount;
+  const rangedIds = shuffledCopy([
+    ...pickN(buckets.rangedHero, rangedHeroCount),
+    ...pickN(buckets.rangedNonHero, RANGED_COUNT - rangedHeroCount)
+  ]);
+  const meleeIds = shuffledCopy([
+    ...pickN(buckets.meleeHero, meleeHeroCount),
+    ...pickN(buckets.meleeNonHero, MELEE_COUNT - meleeHeroCount)
+  ]);
+  return { rangedIds, meleeIds };
+}
+
+function buildRandomSquad() {
+  const MIN_COLORS = 4;
+  const buckets = { rangedHero: [], rangedNonHero: [], meleeHero: [], meleeNonHero: [] };
+  CHARACTERS.forEach(c => {
+    const key = (c.type === 'ranged' ? 'ranged' : 'melee') + (c.isSpecial ? 'Hero' : 'NonHero');
+    buckets[key].push(c.id);
+  });
+  let draw = null;
+  for (let attempt = 0; attempt < 50; attempt++) {
+    const candidate = drawSquad(buckets);
+    const colorCount = new Set([...candidate.rangedIds, ...candidate.meleeIds].map(id => charById(id).color)).size;
+    if (colorCount >= MIN_COLORS) { draw = candidate; break; }
+  }
+  return draw || drawSquad(buckets);
+}
+
+// Same fixed lane-coverage pattern the prototype used: melee 0 aligned to
+// ranged lane 0, melee 1 straddles both lanes (boundary), melee 2 aligned
+// to lane 1 — a property of Ranged always having exactly 2 lanes.
+function meleeCoverageEntries(meleeIds) {
+  return [
+    { charId: meleeIds[0], coverage: { type: 'aligned', lane: 0 } },
+    { charId: meleeIds[1], coverage: { type: 'boundary', lanes: [0, 1] } },
+    { charId: meleeIds[2], coverage: { type: 'aligned', lane: 1 } }
+  ];
+}
+function coverageLabel(coverage) {
+  if (!coverage) return '';
+  if (coverage.type === 'aligned') return `🛡 R${coverage.lane + 1}`;
+  return `🛡 R${coverage.lanes[0] + 1}+R${coverage.lanes[1] + 1}`;
+}
+
+function createHero(charDef, side, extra) {
+  return {
+    side,
+    charId: charDef.id,
+    name: charDef.name,
+    type: charDef.type,
+    color: charDef.color,
+    hp: charDef.hp,
+    maxHp: charDef.hp,
+    mana: 0,
+    maxMana: maxManaFor(charDef),
+    isSpecial: charDef.isSpecial,
+    dead: false,
+    el: null,
+    laneIndex: extra.laneIndex != null ? extra.laneIndex : null,
+    coverage: extra.coverage || null
+  };
+}
+
+function buildSquadHeroes(squad, side) {
+  const list = [];
+  squad.rangedIds.forEach((id, laneIndex) => list.push(createHero(charById(id), side, { laneIndex })));
+  meleeCoverageEntries(squad.meleeIds).forEach(entry => {
+    list.push(createHero(charById(entry.charId), side, { coverage: entry.coverage }));
+  });
+  return list;
+}
+
+let heroes = [];
+let playerHeroes = [];
+let enemyRangedHeroes = [];
+let enemyMeleeHeroes = [];
+
+function buildArmies() {
+  const playerSquad = buildRandomSquad();
+  const enemySquad = buildRandomSquad();
+  playerHeroes = buildSquadHeroes(playerSquad, 'player');
+  const enemyAll = buildSquadHeroes(enemySquad, 'enemy');
+  enemyRangedHeroes = enemyAll.filter(h => h.type === 'ranged');
+  enemyMeleeHeroes = enemyAll.filter(h => h.type === 'melee');
+  heroes = [...playerHeroes, ...enemyAll];
+}
+
+// ---------- HERO / ENEMY CARDS ----------
+function buildHeroCardEl(h) {
+  const card = document.createElement('div');
+  card.className = `card ${h.side}` + (h.isSpecial ? ' special' : '');
+  card.dataset.color = h.color;
+  card.innerHTML = `
+    <div class="card-color-dot" style="background:${COLOR_HEX[h.color] || h.color}"></div>
+    <div class="card-icon">${h.type === 'ranged' ? '🏹' : '⚔️'}</div>
+    <div class="card-name">${h.name}</div>
+    <div class="hp-text">${h.hp}/${h.maxHp}</div>
+    <div class="mana-bar-bg">
+      <div class="mana-bar" style="width:${(h.mana / h.maxMana) * 100}%"></div>
+      <div class="mana-num">${h.mana}/${h.maxMana}</div>
+    </div>
+    ${h.type === 'melee' ? `<div class="coverage-tag">${coverageLabel(h.coverage)}</div>` : ''}
+  `;
+  h.el = card;
+  return card;
+}
+
+function updateHeroUI(h) {
+  if (!h.el) return;
+  h.el.classList.toggle('dead', h.dead);
+  const hpEl = h.el.querySelector('.hp-text');
+  if (hpEl) hpEl.textContent = `${h.hp}/${h.maxHp}`;
+  const barEl = h.el.querySelector('.mana-bar');
+  if (barEl) barEl.style.width = `${(h.mana / h.maxMana) * 100}%`;
+  const numEl = h.el.querySelector('.mana-num');
+  if (numEl) numEl.textContent = `${h.mana}/${h.maxMana}`;
+}
+
+function renderArmies() {
+  const enemyRangedRow = document.getElementById('enemy-ranged-row');
+  const enemyMeleeRow = document.getElementById('enemy-melee-row');
+  const playerRow = document.getElementById('player-hero-row');
+  enemyRangedRow.innerHTML = '';
+  enemyMeleeRow.innerHTML = '';
+  playerRow.innerHTML = '';
+
+  enemyRangedHeroes.forEach(h => enemyRangedRow.appendChild(buildHeroCardEl(h)));
+  enemyMeleeHeroes.forEach(h => enemyMeleeRow.appendChild(buildHeroCardEl(h)));
+  playerHeroes.forEach(h => playerRow.appendChild(buildHeroCardEl(h)));
+}
+
+// ---------- TOAST LOG ----------
+const toastEl = document.getElementById('toast-log');
+let toastTimer = null;
+function log(msg) {
+  toastEl.textContent = msg;
+  toastEl.classList.add('show');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
+}
+
+// ---------- MATCH-3 BOARD ----------
+// Ported near-verbatim from the prototype: same matching, gravity, and
+// special-tile (Arcane Bomb / Runic Crystal) rules. The prototype gated one
+// swap per player turn; that gate is dropped here since there's no attack
+// phase yet to bound a "turn" to — the board is just freely playable.
+let board = [];
+let boardSpecial = [];
+let selectedTile = null;
+let isAnimating = false;
+let boardFrozen = false;
+
+const boardEl = document.getElementById('board');
+const boardWrapEl = document.getElementById('board-wrap');
+
+function setBoardLocked(locked) {
+  boardWrapEl.classList.toggle('locked', locked);
+}
+
+function randomColor() { return COLORS[Math.floor(Math.random() * COLORS.length)]; }
+
+function createEmptyBoard() {
+  board = Array.from({length: ROWS}, () => Array(COLS).fill(null));
+  boardSpecial = Array.from({length: ROWS}, () => Array(COLS).fill(null));
+}
+
+function fillBoardNoMatches() {
+  createEmptyBoard();
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      let c;
+      do {
+        c = randomColor();
+      } while (
+        (x >= 2 && board[y][x-1] === c && board[y][x-2] === c) ||
+        (y >= 2 && board[y-1][x] === c && board[y-2][x] === c)
+      );
+      board[y][x] = c;
+    }
+  }
+}
+
+function renderBoard() {
+  boardEl.innerHTML = '';
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const tile = document.createElement('div');
+      const color = board[y][x];
+      const special = boardSpecial[y][x];
+      if (!color) {
+        tile.className = 'tile empty';
+        tile.textContent = '';
+      } else {
+        tile.className = `tile ${color}` + (special ? ` special-${special}` : '');
+        tile.textContent = special === 'bomb' ? '💣' : special === 'crystal' ? '🔮' : '';
+      }
+      tile.dataset.x = x;
+      tile.dataset.y = y;
+      tile.addEventListener('click', () => onTileClick(x, y));
+      boardEl.appendChild(tile);
+    }
+  }
+}
+
+function getTileEl(x, y) {
+  return boardEl.querySelector(`[data-x="${x}"][data-y="${y}"]`);
+}
+
+function findMatchedCells() {
+  const matched = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+  for (let y = 0; y < ROWS; y++) {
+    let x = 0;
+    while (x < COLS) {
+      const color = board[y][x];
+      if (!color) { x++; continue; }
+      let len = 1;
+      while (x + len < COLS && board[y][x + len] === color) len++;
+      if (len >= 3) for (let i = 0; i < len; i++) matched[y][x + i] = true;
+      x += len;
+    }
+  }
+  for (let x = 0; x < COLS; x++) {
+    let y = 0;
+    while (y < ROWS) {
+      const color = board[y][x];
+      if (!color) { y++; continue; }
+      let len = 1;
+      while (y + len < ROWS && board[y + len][x] === color) len++;
+      if (len >= 3) for (let i = 0; i < len; i++) matched[y + i][x] = true;
+      y += len;
+    }
+  }
+  const cells = [];
+  for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) if (matched[y][x]) cells.push({x, y});
+  return {cells, hasMatches: cells.length > 0};
+}
+
+function findMatchGroups() {
+  const hMatched = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+  const vMatched = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+  for (let y = 0; y < ROWS; y++) {
+    let x = 0;
+    while (x < COLS) {
+      const color = board[y][x];
+      if (!color) { x++; continue; }
+      let len = 1;
+      while (x + len < COLS && board[y][x + len] === color) len++;
+      if (len >= 3) for (let i = 0; i < len; i++) hMatched[y][x + i] = true;
+      x += len;
+    }
+  }
+  for (let x = 0; x < COLS; x++) {
+    let y = 0;
+    while (y < ROWS) {
+      const color = board[y][x];
+      if (!color) { y++; continue; }
+      let len = 1;
+      while (y + len < ROWS && board[y + len][x] === color) len++;
+      if (len >= 3) for (let i = 0; i < len; i++) vMatched[y + i][x] = true;
+      y += len;
+    }
+  }
+  const visited = Array.from({length: ROWS}, () => Array(COLS).fill(false));
+  const groups = [];
+  for (let y = 0; y < ROWS; y++) {
+    for (let x = 0; x < COLS; x++) {
+      const isMatched = hMatched[y][x] || vMatched[y][x];
+      if (!isMatched || visited[y][x]) continue;
+      const color = board[y][x];
+      const cells = [];
+      const queue = [{x, y}];
+      visited[y][x] = true;
+      while (queue.length) {
+        const cur = queue.shift();
+        cells.push(cur);
+        [{x: cur.x + 1, y: cur.y}, {x: cur.x - 1, y: cur.y}, {x: cur.x, y: cur.y + 1}, {x: cur.x, y: cur.y - 1}].forEach(n => {
+          if (n.x < 0 || n.x >= COLS || n.y < 0 || n.y >= ROWS) return;
+          if (visited[n.y][n.x]) return;
+          if (!(hMatched[n.y][n.x] || vMatched[n.y][n.x])) return;
+          if (board[n.y][n.x] !== color) return;
+          visited[n.y][n.x] = true;
+          queue.push(n);
+        });
+      }
+      const intersection = cells.find(c => hMatched[c.y][c.x] && vMatched[c.y][c.x]) || null;
+      groups.push({color, cells, intersection});
+    }
+  }
+  return groups;
+}
+
+function pickSpawnCell(group, swapHintCells) {
+  if (swapHintCells) {
+    const hit = group.cells.find(c => swapHintCells.some(s => s.x === c.x && s.y === c.y));
+    if (hit) return hit;
+  }
+  if (group.intersection) return group.intersection;
+  const sameRow = new Set(group.cells.map(c => c.y)).size === 1;
+  const sorted = group.cells.slice().sort((a, b) => sameRow ? a.x - b.x : a.y - b.y);
+  return sorted[Math.floor((sorted.length - 1) / 2)];
+}
+
+function applyGravityAndFill() {
+  for (let x = 0; x < COLS; x++) {
+    const colorStack = [];
+    const specialStack = [];
+    for (let y = ROWS - 1; y >= 0; y--) {
+      if (board[y][x]) { colorStack.push(board[y][x]); specialStack.push(boardSpecial[y][x]); }
+    }
+    for (let y = ROWS - 1; y >= 0; y--) {
+      if (colorStack.length > 0) {
+        board[y][x] = colorStack.shift();
+        boardSpecial[y][x] = specialStack.shift();
+      } else {
+        board[y][x] = randomColor();
+        boardSpecial[y][x] = null;
+      }
+    }
+  }
+}
+
+// 1 mana per tile to every living PLAYER hero of `color` — matches grow the
+// player's heroes below the board, never the enemy's.
+function grantMana(color, amount) {
+  const matching = heroes.filter(h => h.side === 'player' && !h.dead && h.color === color);
+  matching.forEach(h => {
+    const before = h.mana;
+    h.mana = Math.min(h.maxMana, h.mana + amount);
+    updateHeroUI(h);
+    if (h.mana > before && h.el) {
+      h.el.classList.remove('gained');
+      void h.el.offsetWidth;
+      h.el.classList.add('gained');
+      setTimeout(() => { if (h.el) h.el.classList.remove('gained'); }, 700);
+    }
+  });
+  return matching.length;
+}
+
+// Board-driven damage (Arcane Bomb, Runic Wave) always lands on the ENEMY
+// squad — the player's board is the only one in play right now.
+function dealBoardDamage(target, dmg, sourceLabel) {
+  if (!target || target.dead) return;
+  target.hp -= dmg;
+  if (target.hp <= 0) {
+    target.hp = 0;
+    target.dead = true;
+    log(`${sourceLabel} defeated ${target.name}!`);
+  } else {
+    log(`${sourceLabel} hit ${target.name} for ${dmg} (${target.hp} HP left)`);
+  }
+  updateHeroUI(target);
+  const enemiesAlive = heroes.filter(h => h.side === 'enemy' && !h.dead).length;
+  if (enemiesAlive === 0) {
+    boardFrozen = true;
+    const banner = document.getElementById('win-banner');
+    banner.textContent = '🎉 Victory! All enemies defeated.';
+    banner.classList.add('show');
+  }
+}
+
+function coverageIncludesLane(coverage, lane) {
+  if (!coverage) return false;
+  return coverage.type === 'aligned' ? coverage.lane === lane : coverage.lanes.includes(lane);
+}
+
+// Runic Crystal Option B: a wave travels down both ranged lanes and hits
+// the first living enemy it meets in each — full 3 to an exposed Ranged
+// unit, full 3 to a guarding Melee, or a 2 "half exposed" hit through a
+// Melee that's straddling both lanes (boundary coverage).
+function resolveRunicWaveHits() {
+  const hits = [];
+  const exposedLaneByMelee = new Map();
+  for (let lane = 0; lane < 2; lane++) {
+    const guard = heroes.find(h => h.side === 'enemy' && h.type === 'melee' && !h.dead && coverageIncludesLane(h.coverage, lane));
+    const rangedHere = heroes.find(h => h.side === 'enemy' && h.type === 'ranged' && !h.dead && h.laneIndex === lane);
+    if (guard) {
+      if (!hits.some(hh => hh.hero === guard)) hits.push({hero: guard, dmg: 3});
+      if (rangedHere) {
+        if (guard.coverage.type === 'aligned') {
+          // fully protected — no damage
+        } else {
+          if (!exposedLaneByMelee.has(guard)) {
+            const [a, b] = guard.coverage.lanes;
+            exposedLaneByMelee.set(guard, Math.random() < 0.5 ? a : b);
+          }
+          if (exposedLaneByMelee.get(guard) === lane) hits.push({hero: rangedHere, dmg: 2});
+        }
+      }
+    } else if (rangedHere) {
+      hits.push({hero: rangedHere, dmg: 3});
+    }
+  }
+  return hits;
+}
+
+function applyBombExplosion(item, toClear, explosionQueue, queuedKeys, logParts) {
+  const {x, y} = item;
+  const selfKey = `${x},${y}`;
+  const selfColor = item.color || board[y][x];
+  if (!toClear.has(selfKey) && selfColor) {
+    toClear.add(selfKey);
+    grantMana(selfColor, 1);
+    logParts.push(`${selfColor} +1 (bomb core)`);
+  }
+  const affected = {};
+  [{x: x + 1, y}, {x: x - 1, y}, {x, y: y + 1}, {x, y: y - 1}].forEach(n => {
+    if (n.x < 0 || n.x >= COLS || n.y < 0 || n.y >= ROWS) return;
+    const k = `${n.x},${n.y}`;
+    const nColor = board[n.y][n.x];
+    if (!nColor || toClear.has(k)) return;
+    toClear.add(k);
+    affected[nColor] = (affected[nColor] || 0) + 1;
+    const nType = boardSpecial[n.y][n.x];
+    if (nType && !queuedKeys.has(k)) {
+      queuedKeys.add(k);
+      explosionQueue.push({x: n.x, y: n.y, type: nType});
+    }
+  });
+  Object.entries(affected).forEach(([c, cnt]) => {
+    grantMana(c, cnt);
+    logParts.push(`${c} +${cnt} (bomb blast)`);
+  });
+
+  const frontline = heroes.filter(h => h.side === 'enemy' && h.type === 'melee' && !h.dead);
+  if (frontline.length > 0) {
+    const target = frontline[Math.floor(Math.random() * frontline.length)];
+    dealBoardDamage(target, 2, '💣 Arcane Bomb');
+  } else {
+    log('💣 Arcane Bomb detonates, but there\'s no living enemy front-line unit to hit.');
+  }
+}
+
+function applyCrystalEffect(item, choice, toClear, explosionQueue, queuedKeys, logParts) {
+  const {x, y, color} = item;
+  const selfKey = `${x},${y}`;
+  if (!toClear.has(selfKey)) {
+    toClear.add(selfKey);
+    grantMana(color, 1);
+    logParts.push(`${color} +1 (crystal)`);
+  }
+  if (choice === 'clear') {
+    let count = 0;
+    for (let yy = 0; yy < ROWS; yy++) {
+      for (let xx = 0; xx < COLS; xx++) {
+        if (board[yy][xx] !== color) continue;
+        const k = `${xx},${yy}`;
+        if (toClear.has(k)) continue;
+        toClear.add(k);
+        count++;
+        const t = boardSpecial[yy][xx];
+        if (t && !queuedKeys.has(k)) { queuedKeys.add(k); explosionQueue.push({x: xx, y: yy, type: t}); }
+      }
+    }
+    if (count > 0) {
+      grantMana(color, count);
+      logParts.push(`${color} +${count} (Runic Crystal: Clear Color)`);
+    }
+    log(`🔮 Runic Crystal clears every ${color} tile on the board!`);
+  } else {
+    const hits = resolveRunicWaveHits();
+    if (hits.length === 0) {
+      log('🔮 Runic Wave surges forward but finds no living enemy to strike.');
+    } else {
+      hits.forEach(h => dealBoardDamage(h.hero, h.dmg, '🔮 Runic Wave'));
+    }
+  }
+}
+
+const crystalModal = document.getElementById('crystal-modal');
+const crystalModalTitle = document.getElementById('crystal-modal-title');
+const btnCrystalClear = document.getElementById('btn-crystal-clear');
+const btnCrystalWave = document.getElementById('btn-crystal-wave');
+
+function showCrystalChoiceModal(color, onChoice) {
+  crystalModalTitle.textContent = `🔮 Runic Crystal (${color}) — choose an effect:`;
+  crystalModal.classList.add('show');
+  const cleanup = () => {
+    crystalModal.classList.remove('show');
+    btnCrystalClear.onclick = null;
+    btnCrystalWave.onclick = null;
+  };
+  btnCrystalClear.onclick = () => { cleanup(); onChoice('clear'); };
+  btnCrystalWave.onclick = () => { cleanup(); onChoice('wave'); };
+}
+
+function processExplosionQueue(queue, idx, toClear, queuedKeys, logParts, done) {
+  if (idx >= queue.length) { done(); return; }
+  const item = queue[idx];
+  if (item.type === 'bomb') {
+    applyBombExplosion(item, toClear, queue, queuedKeys, logParts);
+    processExplosionQueue(queue, idx + 1, toClear, queuedKeys, logParts, done);
+  } else {
+    showCrystalChoiceModal(item.color, (choice) => {
+      applyCrystalEffect(item, choice, toClear, queue, queuedKeys, logParts);
+      processExplosionQueue(queue, idx + 1, toClear, queuedKeys, logParts, done);
+    });
+  }
+}
+
+function processMatches(swapHint, activationSeeds) {
+  const groups = findMatchGroups();
+  if (groups.length === 0 && (!activationSeeds || activationSeeds.length === 0)) {
+    isAnimating = false;
+    selectedTile = null;
+    setBoardLocked(false);
+    return;
+  }
+
+  const preExisting = boardSpecial.map(row => row.slice());
+  const toClear = new Set();
+  const spawns = [];
+  const explosionQueue = [];
+  const queuedKeys = new Set();
+  const logParts = [];
+
+  function queueExplosionIfSpecial(x, y) {
+    const type = preExisting[y][x];
+    if (!type || type !== 'bomb') return;
+    const k = `${x},${y}`;
+    if (queuedKeys.has(k)) return;
+    queuedKeys.add(k);
+    explosionQueue.push({x, y, color: board[y][x], type});
+  }
+
+  (activationSeeds || []).forEach(seed => {
+    const k = `${seed.x},${seed.y}`;
+    if (queuedKeys.has(k)) return;
+    queuedKeys.add(k);
+    explosionQueue.push(seed);
+  });
+
+  groups.forEach(group => {
+    const spawnType = group.cells.length >= 5 ? 'crystal' : group.cells.length === 4 ? 'bomb' : null;
+    const spawnCell = spawnType ? pickSpawnCell(group, swapHint) : null;
+    group.cells.forEach(c => {
+      if (spawnCell && c.x === spawnCell.x && c.y === spawnCell.y) {
+        queueExplosionIfSpecial(c.x, c.y);
+        return;
+      }
+      toClear.add(`${c.x},${c.y}`);
+      queueExplosionIfSpecial(c.x, c.y);
+    });
+    if (spawnCell) spawns.push({x: spawnCell.x, y: spawnCell.y, color: group.color, type: spawnType});
+    const gain = group.cells.length;
+    const grantedTo = grantMana(group.color, gain);
+    logParts.push(`${group.color} +${gain}${spawnCell ? ` (spawns ${spawnType === 'crystal' ? 'Runic Crystal' : 'Arcane Bomb'})` : ''}${grantedTo === 0 ? ' (no hero of this color)' : ''}`);
+  });
+  if (logParts.length > 0) log(`Match! ${logParts.join(' | ')}`);
+
+  processExplosionQueue(explosionQueue, 0, toClear, queuedKeys, logParts, () => {
+    toClear.forEach(k => {
+      const [cx, cy] = k.split(',').map(Number);
+      board[cy][cx] = null;
+      boardSpecial[cy][cx] = null;
+    });
+    spawns.forEach(s => {
+      if (toClear.has(`${s.x},${s.y}`)) return;
+      board[s.y][s.x] = s.color;
+      boardSpecial[s.y][s.x] = s.type;
+    });
+    renderBoard();
+
+    setTimeout(() => {
+      applyGravityAndFill();
+      renderBoard();
+
+      setTimeout(() => {
+        const again = findMatchedCells();
+        if (again.hasMatches) {
+          processMatches();
+        } else {
+          isAnimating = false;
+          selectedTile = null;
+          setBoardLocked(false);
+        }
+      }, 220);
+    }, 280);
+  });
+}
+
+function onTileClick(x, y) {
+  if (boardFrozen || isAnimating) return;
+  if (!board[y][x]) return;
+
+  if (boardSpecial[y][x] === 'crystal') {
+    if (selectedTile) {
+      const prevEl = getTileEl(selectedTile.x, selectedTile.y);
+      if (prevEl) prevEl.classList.remove('selected');
+      selectedTile = null;
+    }
+    const el = getTileEl(x, y);
+    if (el) el.classList.add('selected');
+    isAnimating = true;
+    setBoardLocked(true);
+    setTimeout(() => {
+      if (el) el.classList.remove('selected');
+      processMatches(null, [{x, y, color: board[y][x], type: 'crystal'}]);
+    }, 120);
+    return;
+  }
+
+  if (!selectedTile) {
+    selectedTile = {x, y};
+    const el = getTileEl(x, y);
+    if (el) el.classList.add('selected');
+    return;
+  }
+
+  const x1 = selectedTile.x, y1 = selectedTile.y;
+  const prevEl = getTileEl(x1, y1);
+  if (prevEl) prevEl.classList.remove('selected');
+
+  const dx = Math.abs(x - x1), dy = Math.abs(y - y1);
+  if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1)) {
+    const tmpColor = board[y1][x1], tmpSpecial = boardSpecial[y1][x1];
+    board[y1][x1] = board[y][x];
+    boardSpecial[y1][x1] = boardSpecial[y][x];
+    board[y][x] = tmpColor;
+    boardSpecial[y][x] = tmpSpecial;
+    renderBoard();
+
+    const {hasMatches} = findMatchedCells();
+    const activationSeeds = [];
+    if (boardSpecial[y1][x1] === 'bomb') activationSeeds.push({x: x1, y: y1, color: board[y1][x1], type: 'bomb'});
+    if (boardSpecial[y][x] === 'bomb') activationSeeds.push({x, y, color: board[y][x], type: 'bomb'});
+
+    if (hasMatches || activationSeeds.length > 0) {
+      isAnimating = true;
+      selectedTile = null;
+      setBoardLocked(true);
+      const swapHint = [{x: x1, y: y1}, {x, y}];
+      setTimeout(() => processMatches(swapHint, activationSeeds), 120);
+    } else {
+      board[y][x] = board[y1][x1];
+      boardSpecial[y][x] = boardSpecial[y1][x1];
+      board[y1][x1] = tmpColor;
+      boardSpecial[y1][x1] = tmpSpecial;
+      renderBoard();
+      log('No match – swap reverted');
+      selectedTile = null;
+    }
+  } else {
+    selectedTile = {x, y};
+    const el = getTileEl(x, y);
+    if (el) el.classList.add('selected');
+  }
+}
+
+// ---------- INIT ----------
+buildArmies();
+renderArmies();
+fillBoardNoMatches();
+renderBoard();
+log('Match tiles to power up your heroes. Bombs (4-in-a-row) and Runic Crystals (5+) hit the enemy squad above.');
+</script>
+</body>
+</html>

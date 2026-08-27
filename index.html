@@ -20,6 +20,21 @@
   h1 { font-size: 1.3rem; color: #ffd700; margin-bottom: 4px; text-align: center; }
   .subtitle { font-size: 0.75rem; color: #aaa; text-align: center; margin-bottom: 10px; max-width: 520px; }
 
+  .topbar { width: 100%; max-width: 640px; display: flex; justify-content: center; margin-bottom: 12px; }
+  .nav-btn {
+    background: #0f3460;
+    color: #ffd700;
+    border: 2px solid #ffd700;
+    border-radius: 8px;
+    padding: 10px 18px;
+    font-size: 0.9rem;
+    font-weight: bold;
+    cursor: pointer;
+    text-decoration: none;
+    display: inline-block;
+  }
+  .nav-btn:active { transform: scale(0.97); }
+
   .rules-box {
     width: 100%;
     max-width: 640px;
@@ -232,7 +247,11 @@
 <body>
 
   <h1>⚔ War of Shards — Character Codex</h1>
-  <div class="subtitle">All 45 heroes and mercenaries. Stats and abilities only for now — the battlefield isn't built yet.</div>
+  <div class="subtitle">All 45 heroes and mercenaries.</div>
+
+  <div class="topbar">
+    <a class="nav-btn" href="battlefield.html">Go to Battlefield →</a>
+  </div>
 
   <div class="rules-box">
     <b>Shared rules:</b> Basic Attack usually costs 3 mana for 1 damage (a few heavier-weapon characters cost more — shown per-character below). Only ★ Special characters have a Special Attack: 5 mana for 2 damage, or a unique effect described below. A hero's max mana equals the cost of the strongest attack they have.
