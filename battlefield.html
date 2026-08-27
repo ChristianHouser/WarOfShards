@@ -119,14 +119,15 @@
     min-height: 0;
   }
   /* Enemy rows hold different counts (2 Ranged, 3 Melee) but must render
-     the same card size in both — sized off the denser row (3-wide) and
-     centered, rather than stretching to fill each row's own width. */
+     a standardized card size — sized as if a row always holds a full
+     TEAM_CAP of 5 (4 gaps of 4px each), centered, regardless of how many
+     cards actually occupy that row. */
   .hero-row.enemy-row {
     justify-content: center;
   }
   .hero-row.enemy-row .card {
-    flex: 0 0 calc((100% - 8px) / 3);
-    width: calc((100% - 8px) / 3);
+    flex: 0 0 calc((100% - 16px) / 5);
+    width: calc((100% - 16px) / 5);
   }
 
   /* ===== HERO / ENEMY CARDS ===== */
@@ -181,12 +182,29 @@
     font-weight: 600;
     flex-shrink: 0;
   }
-  .hp-text {
+  .hp-value {
     font-size: 0.56rem;
     line-height: 1;
     color: #f88;
     font-weight: bold;
     flex-shrink: 0;
+  }
+  .hp-bar-bg {
+    width: 90%;
+    height: 4.5px;
+    background: #0a0a12;
+    border-radius: 3px;
+    overflow: hidden;
+    border: 1px solid #555;
+    position: relative;
+    flex-shrink: 0;
+    margin-bottom: 1px;
+  }
+  .hp-bar {
+    height: 100%;
+    width: 100%;
+    background: linear-gradient(90deg, #ff4d4d, #ff8a3d);
+    transition: width 0.35s ease-out;
   }
   .mana-bar-bg {
     width: 90%;
@@ -500,7 +518,10 @@ function buildHeroCardEl(h) {
     <div class="card-color-dot" style="background:${COLOR_HEX[h.color] || h.color}"></div>
     <div class="card-icon">${h.type === 'ranged' ? '🏹' : '⚔️'}</div>
     <div class="card-name">${h.name}</div>
-    <div class="hp-text">${h.hp}/${h.maxHp}</div>
+    <div class="hp-value">${h.hp}</div>
+    <div class="hp-bar-bg">
+      <div class="hp-bar" style="width:${(h.hp / h.maxHp) * 100}%"></div>
+    </div>
     <div class="mana-bar-bg">
       <div class="mana-bar" style="width:${(h.mana / h.maxMana) * 100}%"></div>
     </div>
@@ -513,8 +534,10 @@ function buildHeroCardEl(h) {
 function updateHeroUI(h) {
   if (!h.el) return;
   h.el.classList.toggle('dead', h.dead);
-  const hpEl = h.el.querySelector('.hp-text');
-  if (hpEl) hpEl.textContent = `${h.hp}/${h.maxHp}`;
+  const hpValEl = h.el.querySelector('.hp-value');
+  if (hpValEl) hpValEl.textContent = h.hp;
+  const hpBarEl = h.el.querySelector('.hp-bar');
+  if (hpBarEl) hpBarEl.style.width = `${(h.hp / h.maxHp) * 100}%`;
   const barEl = h.el.querySelector('.mana-bar');
   if (barEl) barEl.style.width = `${(h.mana / h.maxMana) * 100}%`;
 }
