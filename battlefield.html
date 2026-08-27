@@ -151,6 +151,16 @@
   .card.special { border-color: #c0c0c0; box-shadow: 0 0 6px #c0c0c088; }
   .card.dead { opacity: 0.25; filter: grayscale(1); }
   .card.gained { animation: manaFlash 0.6s ease; }
+  .card.selected {
+    box-shadow: 0 0 0 3px #00ffaa, 0 0 12px #00ffaa88;
+    transform: scale(1.05);
+    z-index: 3;
+  }
+  .card.targetable {
+    box-shadow: 0 0 0 2px #ffd700, 0 0 10px #ffd70088;
+    cursor: pointer;
+  }
+  .card.player { cursor: pointer; }
   @keyframes manaFlash {
     0% { box-shadow: 0 0 0 0 #00ffaa; }
     40% { box-shadow: 0 0 16px 4px #00ffaa; transform: scale(1.06); }
@@ -297,6 +307,10 @@
   }
   .modal-btn.clear { background: #9b59b6; }
   .modal-btn.wave  { background: #e74c3c; }
+  .modal-btn.basic   { background: #3498db; }
+  .modal-btn.special { background: #e74c3c; }
+  .modal-btn.cancel  { background: #555; font-size: 0.78rem; padding: 8px; }
+  .modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
 <body>
@@ -330,6 +344,16 @@
     <div id="crystal-modal-title" class="modal-title"></div>
     <button id="btn-crystal-clear" class="modal-btn clear">Clear All Tiles of This Color</button>
     <button id="btn-crystal-wave" class="modal-btn wave">🔮 Runic Wave (attack)</button>
+  </div>
+</div>
+
+<!-- Attack Choice Modal (Heroes only — normal characters attack directly) -->
+<div id="attack-modal" class="modal">
+  <div class="modal-box">
+    <div id="attack-modal-title" class="modal-title"></div>
+    <button id="btn-attack-basic" class="modal-btn basic"></button>
+    <button id="btn-attack-special" class="modal-btn special"></button>
+    <button id="btn-attack-cancel" class="modal-btn cancel">Cancel</button>
   </div>
 </div>
 
@@ -436,6 +460,9 @@ function createHero(charDef, side, extra) {
     mana: 0,
     maxMana: maxManaFor(charDef),
     isSpecial: charDef.isSpecial,
+    abilityName: charDef.abilityName,
+    abilityText: charDef.abilityText,
+    simpleAbility: charDef.simpleAbility,
     dead: false,
     el: null,
     laneIndex: extra.laneIndex != null ? extra.laneIndex : null,
@@ -527,6 +554,7 @@ function buildHeroCardEl(h) {
     </div>
     ${h.type === 'melee' ? `<div class="coverage-tag">${coverageLabel(h.coverage)}</div>` : ''}
   `;
+  card.addEventListener('click', () => onHeroCardClick(h));
   h.el = card;
   return card;
 }
@@ -763,6 +791,19 @@ function grantMana(color, amount) {
   return matching.length;
 }
 
+// Shared by board-driven damage and hero attacks: ends the battle the
+// moment one side has no living heroes left.
+function checkWinLoss() {
+  if (boardFrozen) return;
+  const enemiesAlive = heroes.filter(h => h.side === 'enemy' && !h.dead).length;
+  const playersAlive = heroes.filter(h => h.side === 'player' && !h.dead).length;
+  if (enemiesAlive > 0 && playersAlive > 0) return;
+  boardFrozen = true;
+  const banner = document.getElementById('win-banner');
+  banner.textContent = enemiesAlive === 0 ? '🎉 Victory! All enemies defeated.' : '💀 Defeat — all your heroes have fallen.';
+  banner.classList.add('show');
+}
+
 // Board-driven damage (Arcane Bomb, Runic Wave) always lands on the ENEMY
 // squad — the player's board is the only one in play right now.
 function dealBoardDamage(target, dmg, sourceLabel) {
@@ -776,19 +817,187 @@ function dealBoardDamage(target, dmg, sourceLabel) {
     log(`${sourceLabel} hit ${target.name} for ${dmg} (${target.hp} HP left)`);
   }
   updateHeroUI(target);
-  const enemiesAlive = heroes.filter(h => h.side === 'enemy' && !h.dead).length;
-  if (enemiesAlive === 0) {
-    boardFrozen = true;
-    const banner = document.getElementById('win-banner');
-    banner.textContent = '🎉 Victory! All enemies defeated.';
-    banner.classList.add('show');
-  }
+  checkWinLoss();
 }
 
 function coverageIncludesLane(coverage, lane) {
   if (!coverage) return false;
   return coverage.type === 'aligned' ? coverage.lane === lane : coverage.lanes.includes(lane);
 }
+
+// ---------- COMBAT ----------
+// Which ranged lanes are currently protected by a living melee hero on the
+// given side (each melee hero carries its own `coverage`, assigned at
+// deployment/squad-build — either aligned to one lane, a boundary between
+// two, or null).
+function getCoveredLanes(side) {
+  const covered = new Set();
+  heroes.forEach(h => {
+    if (h.side === side && h.type === 'melee' && !h.dead && h.coverage) {
+      if (h.coverage.type === 'aligned') covered.add(h.coverage.lane);
+      else if (h.coverage.type === 'boundary') h.coverage.lanes.forEach(l => covered.add(l));
+    }
+  });
+  return covered;
+}
+
+// Melee can always reach enemy Melee. Melee can only reach a specific enemy
+// Ranged lane once no living enemy Melee occupies a slot covering that lane
+// (fully aligned or half-step boundary). Ranged can always attack anyone.
+function getValidTargets(attacker) {
+  const enemySide = attacker.side === 'player' ? 'enemy' : 'player';
+  const enemyMelee = heroes.filter(h => h.side === enemySide && h.type === 'melee' && !h.dead);
+  const enemyRanged = heroes.filter(h => h.side === enemySide && h.type === 'ranged' && !h.dead);
+  if (attacker.type === 'ranged') return [...enemyMelee, ...enemyRanged];
+  const coveredLanes = getCoveredLanes(enemySide);
+  const reachableRanged = enemyRanged.filter(h => !coveredLanes.has(h.laneIndex));
+  return [...enemyMelee, ...reachableRanged];
+}
+
+let selectedHero = null;        // the player hero currently chosen to attack
+let selectedAttackType = 'basic'; // 'basic' | 'special'
+let pendingActionHero = null;   // hero awaiting a Basic/Special choice in the modal
+
+// Highlights the selected attacker and every enemy currently reachable by
+// it, and clears those highlights entirely when nothing's selected.
+function refreshSelectionUI() {
+  heroes.forEach(h => {
+    if (!h.el) return;
+    h.el.classList.toggle('selected', h === selectedHero);
+    h.el.classList.remove('targetable');
+  });
+  if (selectedHero) {
+    getValidTargets(selectedHero).forEach(h => { if (h.el) h.el.classList.add('targetable'); });
+  }
+}
+
+function onHeroCardClick(h) {
+  if (boardFrozen || isAnimating || h.dead) return;
+
+  if (h.side === 'player') {
+    if (selectedHero === h) {
+      selectedHero = null;
+      refreshSelectionUI();
+      log('Deselected.');
+      return;
+    }
+    const cost = basicCostFor(h);
+    if (h.mana < cost) {
+      log(`${h.name} needs at least ${cost} mana (has ${h.mana}).`);
+      return;
+    }
+    // Heroes with a Special get a Basic-vs-Special choice; normal
+    // characters have only Basic, so they select straight away.
+    if (h.isSpecial) {
+      pendingActionHero = h;
+      document.getElementById('attack-modal-title').textContent =
+        `${h.name} ★${h.abilityName ? ' — ' + h.abilityName : ''} (mana: ${h.mana}/${h.maxMana})`;
+      const btnBasic = document.getElementById('btn-attack-basic');
+      const btnSpecial = document.getElementById('btn-attack-special');
+      btnBasic.textContent = `Basic (${cost} mana → ${basicDmgFor(h)} dmg)`;
+      btnBasic.disabled = h.mana < cost;
+      btnSpecial.textContent = `Special (${SPECIAL_COST} mana → ${SPECIAL_DMG} dmg)${h.abilityText ? ' — ' + h.abilityText : ''}`;
+      btnSpecial.disabled = h.mana < SPECIAL_COST;
+      document.getElementById('attack-modal').classList.add('show');
+      return;
+    }
+    selectedHero = h;
+    selectedAttackType = 'basic';
+    refreshSelectionUI();
+    log(`Selected ${h.name}. Tap an enemy to attack.`);
+    return;
+  }
+
+  // Enemy card tapped — only meaningful once an attacker is selected.
+  if (!selectedHero) {
+    log('Select one of your heroes below first.');
+    return;
+  }
+  if (!getValidTargets(selectedHero).includes(h)) {
+    if (selectedHero.type === 'melee' && h.type === 'ranged') {
+      log(`${selectedHero.name}'s melee can't reach ${h.name} — an enemy melee unit is guarding that lane.`);
+    } else {
+      log('Not a valid target.');
+    }
+    return;
+  }
+  performAttack(selectedHero, h, selectedAttackType);
+}
+
+function performAttack(attacker, target, attackType) {
+  if (attacker.dead || target.dead) return;
+
+  let cost, dmg, usedSpecial = false;
+  const targetWasDamaged = target.hp < target.maxHp;
+  const targetWasLowHp = target.hp <= 3;
+
+  if (attackType === 'special') {
+    if (!attacker.isSpecial) { log(`${attacker.name} has no Special attack.`); return; }
+    if (attacker.mana < SPECIAL_COST) { log('Not enough mana for Special.'); return; }
+    cost = SPECIAL_COST;
+    dmg = SPECIAL_DMG;
+    usedSpecial = true;
+    // Simple, already-implemented special effects (flat modifiers only —
+    // see characters.js header for what's wired up vs. description-only).
+    if (attacker.simpleAbility === 'divineStrike' && targetWasDamaged) dmg += 1;
+    if (attacker.simpleAbility === 'brutal' && targetWasLowHp) dmg += 1;
+  } else {
+    cost = basicCostFor(attacker);
+    if (attacker.mana < cost) { log('Not enough mana.'); return; }
+    dmg = basicDmgFor(attacker);
+  }
+
+  attacker.mana -= cost;
+  target.hp -= dmg;
+  if (target.hp <= 0) {
+    target.hp = 0;
+    target.dead = true;
+    log(`${attacker.name}${usedSpecial ? ' ★' : ''} defeated ${target.name}!`);
+  } else {
+    log(`${attacker.name}${usedSpecial ? ' ★' : ''} hit ${target.name} for ${dmg} (${target.hp} HP left)`);
+  }
+
+  if (attacker.simpleAbility === 'frenzy') {
+    const before = attacker.mana;
+    attacker.mana = Math.min(attacker.maxMana, attacker.mana + 1);
+    if (attacker.mana > before) log(`${attacker.name}'s Frenzy grants +1 mana.`);
+  }
+
+  updateHeroUI(attacker);
+  updateHeroUI(target);
+  selectedHero = null;
+  selectedAttackType = 'basic';
+  refreshSelectionUI();
+  checkWinLoss();
+}
+
+const attackModal = document.getElementById('attack-modal');
+document.getElementById('btn-attack-basic').addEventListener('click', () => {
+  if (!pendingActionHero) return;
+  const cost = basicCostFor(pendingActionHero);
+  if (pendingActionHero.mana < cost) { log(`Not enough mana for Basic (need ${cost}).`); return; }
+  selectedHero = pendingActionHero;
+  selectedAttackType = 'basic';
+  pendingActionHero = null;
+  attackModal.classList.remove('show');
+  refreshSelectionUI();
+  log(`Selected ${selectedHero.name} — BASIC. Tap an enemy.`);
+});
+document.getElementById('btn-attack-special').addEventListener('click', () => {
+  if (!pendingActionHero) return;
+  if (pendingActionHero.mana < SPECIAL_COST) { log('Not enough mana for Special (need 5).'); return; }
+  selectedHero = pendingActionHero;
+  selectedAttackType = 'special';
+  pendingActionHero = null;
+  attackModal.classList.remove('show');
+  refreshSelectionUI();
+  log(`Selected ${selectedHero.name} — SPECIAL ★. Tap an enemy.`);
+});
+document.getElementById('btn-attack-cancel').addEventListener('click', () => {
+  pendingActionHero = null;
+  attackModal.classList.remove('show');
+  log('Attack cancelled.');
+});
 
 // Runic Crystal Option B: a wave travels down both ranged lanes and hits
 // the first living enemy it meets in each — full 3 to an exposed Ranged
