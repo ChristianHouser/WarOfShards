@@ -35,6 +35,79 @@
   .nav-btn.primary { background: #1f5c2e; border-color: #8fe0a0; color: #8fe0a0; }
   .nav-btn.disabled { opacity: 0.4; pointer-events: none; }
 
+  /* ===== FORMATION BUTTON ===== */
+  #formation-bar { flex-shrink: 0; display: flex; justify-content: center; padding: 4px 8px 6px; }
+  #btn-formation {
+    background: #16213e;
+    color: #9be;
+    border: 1px solid #4a7ab5;
+    border-radius: 14px;
+    padding: 5px 14px;
+    font-size: 0.7rem;
+    font-weight: bold;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+  }
+  #btn-formation:active { transform: scale(0.97); }
+
+  /* ===== MODAL ===== */
+  .modal {
+    display: none;
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.7);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+  }
+  .modal.show { display: flex; }
+  .modal-box {
+    background: #1e1e3f;
+    border: 2px solid #4a7ab5;
+    border-radius: 12px;
+    padding: 16px;
+    max-width: 320px;
+    width: 90%;
+    text-align: center;
+  }
+  .modal-title { font-weight: bold; margin-bottom: 12px; color: #9be; font-size: 0.9rem; }
+  .preset-btn {
+    display: block;
+    width: 100%;
+    text-align: left;
+    margin: 8px 0;
+    padding: 10px 12px;
+    color: white;
+    background: #16213e;
+    border: 1px solid #4a7ab5;
+    border-radius: 8px;
+    font-size: 0.8rem;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  .preset-btn:active { transform: scale(0.98); }
+  .preset-sub {
+    display: block;
+    font-size: 0.62rem;
+    font-weight: normal;
+    color: #aac;
+    margin-top: 3px;
+    line-height: 1.3;
+  }
+  .modal-btn.cancel {
+    display: block;
+    width: 100%;
+    margin: 10px 0 0;
+    padding: 8px;
+    background: #555;
+    color: white;
+    border: none;
+    border-radius: 6px;
+    font-size: 0.78rem;
+    cursor: pointer;
+  }
+
   /* ===== PLACEMENT ZONE (small — just shows where cards go) ===== */
   #placement-zone {
     flex-shrink: 0;
@@ -178,11 +251,17 @@
   #roster-empty { text-align: center; color: #888; font-size: 0.72rem; padding: 24px 0; grid-column: 1 / -1; }
 
   .roster-card {
+    aspect-ratio: 1 / 1;
     background: #22223a;
     border: 2px solid #444;
     border-radius: 8px;
     padding: 6px 4px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
     text-align: center;
+    overflow: hidden;
     cursor: grab;
     touch-action: none;
     user-select: none;
@@ -192,9 +271,19 @@
   .roster-card[data-color="blue"]   { background: linear-gradient(160deg, #1a2740, #22223a 70%); }
   .roster-card[data-color="yellow"] { background: linear-gradient(160deg, #3a3010, #22223a 70%); }
   .roster-card[data-color="purple"] { background: linear-gradient(160deg, #331a3a, #22223a 70%); }
-  .rc-dot { width: 9px; height: 9px; border-radius: 50%; margin: 0 auto 3px; border: 1px solid #000; }
-  .rc-name { font-size: 0.58rem; font-weight: bold; color: #fff; line-height: 1.15; margin-bottom: 2px; }
-  .rc-sub { font-size: 0.48rem; color: #aaa; line-height: 1.3; }
+  .rc-dot { width: 9px; height: 9px; border-radius: 50%; margin: 0 auto 3px; border: 1px solid #000; flex-shrink: 0; }
+  .rc-name {
+    font-size: 0.56rem;
+    font-weight: bold;
+    color: #fff;
+    line-height: 1.15;
+    margin-bottom: 2px;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+  .rc-sub { font-size: 0.46rem; color: #aaa; line-height: 1.3; flex-shrink: 0; }
 
   /* ===== DRAG GHOST ===== */
   .drag-ghost {
@@ -254,6 +343,10 @@
     <div id="front-zone"></div>
   </div>
 
+  <div id="formation-bar">
+    <button id="btn-formation" type="button">🛡 Formation</button>
+  </div>
+
   <div id="search-filter-bar">
     <input type="text" id="search-input" placeholder="Search name or ability...">
     <div id="filter-bar"></div>
@@ -261,6 +354,22 @@
 
   <div id="roster-scroll">
     <div id="roster-grid"></div>
+  </div>
+</div>
+
+<div id="formation-modal" class="modal">
+  <div class="modal-box">
+    <div class="modal-title">🛡 Choose a Formation</div>
+    <button class="preset-btn" data-preset="balanced">⚖ Balanced
+      <span class="preset-sub">Fills empty spots, then spreads your Front melee between guarding one Back lane and straddling two — even coverage.</span>
+    </button>
+    <button class="preset-btn" data-preset="aggressive">⚔ Aggressive
+      <span class="preset-sub">Fills empty spots, then lines every Front melee up directly behind its own lane — no overlap, more units exposed forward.</span>
+    </button>
+    <button class="preset-btn" data-preset="defensive">🛡 Defensive
+      <span class="preset-sub">Fills empty spots, then puts as many Front melee as possible on the straddle between two lanes — maximum overlapping protection.</span>
+    </button>
+    <button class="modal-btn cancel" id="btn-formation-cancel">Cancel</button>
   </div>
 </div>
 
@@ -706,6 +815,94 @@ function onFrontDragEnd(e) {
 document.getElementById('nav-battle').addEventListener('click', (e) => {
   if (placedCount() === 0) { e.preventDefault(); return; }
   localStorage.setItem('warOfShards.playerSquad', JSON.stringify(playerPlacements));
+});
+
+// ---------- FORMATION PRESETS ----------
+// A formation never unplaces anyone already on the squad — it fills
+// whatever Back/Front spots are still empty from the available roster,
+// then (re)assigns every Front melee's band according to the preset's
+// pattern. Reuses the same aligned/boundary band shape the drag system
+// produces, so a formation's result looks identical to one placed by hand.
+function shuffledCopy(arr) {
+  const a = arr.slice();
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [a[i], a[j]] = [a[j], a[i]];
+  }
+  return a;
+}
+
+function fillEmptySlotsFromRoster() {
+  for (let i = 0; i < BACK_SLOTS; i++) {
+    if (playerPlacements.back[i] != null) continue;
+    const pool = shuffledCopy(deployAvailable.filter(id => charById(id).type === 'ranged'));
+    if (pool.length === 0) continue;
+    const id = pool[0];
+    playerPlacements.back[i] = id;
+    deployAvailable = deployAvailable.filter(x => x !== id);
+  }
+  while (playerPlacements.front.length < FRONT_CAP) {
+    const pool = shuffledCopy(deployAvailable.filter(id => charById(id).type === 'melee'));
+    if (pool.length === 0) break;
+    const id = pool[0];
+    playerPlacements.front.push({ charId: id, band: null });
+    deployAvailable = deployAvailable.filter(x => x !== id);
+  }
+}
+
+function assignFormationBands(preset) {
+  const n = playerPlacements.front.length;
+  if (n === 0) return;
+  if (preset === 'aggressive') {
+    // Every melee aligned straight behind its own lane — no straddling.
+    playerPlacements.front.forEach((entry, i) => {
+      entry.band = { type: 'aligned', index: i % BACK_SLOTS };
+    });
+  } else if (preset === 'defensive') {
+    // As many melee as possible on a straddle (one per gap between lanes);
+    // overflow beyond the 4 gaps falls back to aligned on the outer lanes.
+    const boundaries = [];
+    for (let i = 0; i < BACK_SLOTS - 1; i++) boundaries.push({ type: 'boundary', indices: [i, i + 1] });
+    playerPlacements.front.forEach((entry, i) => {
+      entry.band = i < boundaries.length ? boundaries[i] : { type: 'aligned', index: i % BACK_SLOTS };
+    });
+  } else {
+    // Balanced: alternate aligned/boundary across the lanes for spread-out,
+    // partially-overlapping coverage.
+    const pattern = [];
+    for (let i = 0; i < BACK_SLOTS; i++) {
+      pattern.push({ type: 'aligned', index: i });
+      if (i < BACK_SLOTS - 1) pattern.push({ type: 'boundary', indices: [i, i + 1] });
+    }
+    playerPlacements.front.forEach((entry, i) => {
+      entry.band = pattern[i % pattern.length];
+    });
+  }
+}
+
+function applyFormation(preset) {
+  fillEmptySlotsFromRoster();
+  assignFormationBands(preset);
+  sortDeployAvailable();
+  renderRosterGrid();
+  renderPlacementZone();
+  updateStatus();
+  const label = preset.charAt(0).toUpperCase() + preset.slice(1);
+  log(`🛡 ${label} formation applied.`);
+}
+
+const formationModal = document.getElementById('formation-modal');
+document.getElementById('btn-formation').addEventListener('click', () => {
+  formationModal.classList.add('show');
+});
+document.getElementById('btn-formation-cancel').addEventListener('click', () => {
+  formationModal.classList.remove('show');
+});
+formationModal.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    formationModal.classList.remove('show');
+    applyFormation(btn.dataset.preset);
+  });
 });
 
 // ---------- INIT ----------
