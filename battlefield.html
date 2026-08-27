@@ -190,9 +190,9 @@
   }
   .mana-bar-bg {
     width: 90%;
-    height: 9px;
+    height: 4.5px;
     background: #0a0a12;
-    border-radius: 4px;
+    border-radius: 3px;
     overflow: hidden;
     border: 1px solid #555;
     position: relative;
@@ -205,16 +205,6 @@
     transition: width 0.35s ease-out;
   }
   .card.enemy .mana-bar { background: linear-gradient(90deg, #f5576c, #f093fb); }
-  .mana-num {
-    position: absolute;
-    left: 0; right: 0; top: 50%;
-    transform: translateY(-50%);
-    font-size: 0.5rem;
-    font-weight: 800;
-    color: #fff;
-    text-shadow: 0 1px 2px #000;
-    text-align: center;
-  }
   .coverage-tag {
     font-size: 0.44rem;
     color: #9be;
@@ -513,7 +503,6 @@ function buildHeroCardEl(h) {
     <div class="hp-text">${h.hp}/${h.maxHp}</div>
     <div class="mana-bar-bg">
       <div class="mana-bar" style="width:${(h.mana / h.maxMana) * 100}%"></div>
-      <div class="mana-num">${h.mana}/${h.maxMana}</div>
     </div>
     ${h.type === 'melee' ? `<div class="coverage-tag">${coverageLabel(h.coverage)}</div>` : ''}
   `;
@@ -528,8 +517,6 @@ function updateHeroUI(h) {
   if (hpEl) hpEl.textContent = `${h.hp}/${h.maxHp}`;
   const barEl = h.el.querySelector('.mana-bar');
   if (barEl) barEl.style.width = `${(h.mana / h.maxMana) * 100}%`;
-  const numEl = h.el.querySelector('.mana-num');
-  if (numEl) numEl.textContent = `${h.mana}/${h.maxMana}`;
 }
 
 function renderArmies() {
@@ -612,7 +599,7 @@ function renderBoard() {
       }
       tile.dataset.x = x;
       tile.dataset.y = y;
-      tile.addEventListener('click', () => onTileClick(x, y));
+      tile.addEventListener('pointerdown', (e) => onTilePointerDown(e, x, y));
       boardEl.appendChild(tile);
     }
   }
@@ -995,16 +982,69 @@ function processMatches(swapHint, activationSeeds) {
   });
 }
 
-function onTileClick(x, y) {
+// ---------- TILE INTERACTION: tap-to-select-then-tap, or slide ----------
+// Both gestures funnel into attemptSwap() so tap and slide behave
+// identically once a source/target pair is decided. A pointerdown starts
+// tracking; if the pointer moves past SLIDE_THRESHOLD before release, it's
+// treated as a slide toward whichever adjacent tile is in that direction
+// and fires immediately. If it's released without crossing the threshold,
+// it's a plain tap, which falls back to the classic select-then-tap-an-
+// adjacent-tile flow.
+const SLIDE_THRESHOLD = 14; // px of pointer movement before a drag counts as a directional slide
+let gestureState = null; // {x, y, startClientX, startClientY, moved}
+
+function onTilePointerDown(e, x, y) {
+  if (boardFrozen || isAnimating) return;
+  if (!board[y][x]) return;
+  gestureState = { x, y, startClientX: e.clientX, startClientY: e.clientY, moved: false };
+  window.addEventListener('pointermove', onTilePointerMove);
+  window.addEventListener('pointerup', onTilePointerUp);
+}
+
+function onTilePointerMove(e) {
+  if (!gestureState || gestureState.moved) return;
+  const dx = e.clientX - gestureState.startClientX;
+  const dy = e.clientY - gestureState.startClientY;
+  if (Math.abs(dx) < SLIDE_THRESHOLD && Math.abs(dy) < SLIDE_THRESHOLD) return;
+  gestureState.moved = true;
+
+  const sx = gestureState.x, sy = gestureState.y;
+  let tx = sx, ty = sy;
+  if (Math.abs(dx) > Math.abs(dy)) tx = sx + (dx > 0 ? 1 : -1);
+  else ty = sy + (dy > 0 ? 1 : -1);
+
+  cleanupGesture();
+  if (tx < 0 || tx >= COLS || ty < 0 || ty >= ROWS) return;
+  clearSelection();
+  attemptSwap(sx, sy, tx, ty);
+}
+
+function onTilePointerUp(e) {
+  if (!gestureState) return;
+  const { x, y, moved } = gestureState;
+  cleanupGesture();
+  if (!moved) handleTap(x, y);
+}
+
+function cleanupGesture() {
+  window.removeEventListener('pointermove', onTilePointerMove);
+  window.removeEventListener('pointerup', onTilePointerUp);
+  gestureState = null;
+}
+
+function clearSelection() {
+  if (!selectedTile) return;
+  const el = getTileEl(selectedTile.x, selectedTile.y);
+  if (el) el.classList.remove('selected');
+  selectedTile = null;
+}
+
+function handleTap(x, y) {
   if (boardFrozen || isAnimating) return;
   if (!board[y][x]) return;
 
   if (boardSpecial[y][x] === 'crystal') {
-    if (selectedTile) {
-      const prevEl = getTileEl(selectedTile.x, selectedTile.y);
-      if (prevEl) prevEl.classList.remove('selected');
-      selectedTile = null;
-    }
+    clearSelection();
     const el = getTileEl(x, y);
     if (el) el.classList.add('selected');
     isAnimating = true;
@@ -1024,43 +1064,85 @@ function onTileClick(x, y) {
   }
 
   const x1 = selectedTile.x, y1 = selectedTile.y;
-  const prevEl = getTileEl(x1, y1);
-  if (prevEl) prevEl.classList.remove('selected');
+  clearSelection();
 
   const dx = Math.abs(x - x1), dy = Math.abs(y - y1);
   if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1)) {
-    const tmpColor = board[y1][x1], tmpSpecial = boardSpecial[y1][x1];
-    board[y1][x1] = board[y][x];
-    boardSpecial[y1][x1] = boardSpecial[y][x];
-    board[y][x] = tmpColor;
-    boardSpecial[y][x] = tmpSpecial;
-    renderBoard();
-
-    const {hasMatches} = findMatchedCells();
-    const activationSeeds = [];
-    if (boardSpecial[y1][x1] === 'bomb') activationSeeds.push({x: x1, y: y1, color: board[y1][x1], type: 'bomb'});
-    if (boardSpecial[y][x] === 'bomb') activationSeeds.push({x, y, color: board[y][x], type: 'bomb'});
-
-    if (hasMatches || activationSeeds.length > 0) {
-      isAnimating = true;
-      selectedTile = null;
-      setBoardLocked(true);
-      const swapHint = [{x: x1, y: y1}, {x, y}];
-      setTimeout(() => processMatches(swapHint, activationSeeds), 120);
-    } else {
-      board[y][x] = board[y1][x1];
-      boardSpecial[y][x] = boardSpecial[y1][x1];
-      board[y1][x1] = tmpColor;
-      boardSpecial[y1][x1] = tmpSpecial;
-      renderBoard();
-      log('No match – swap reverted');
-      selectedTile = null;
-    }
+    attemptSwap(x1, y1, x, y);
   } else {
     selectedTile = {x, y};
     const el = getTileEl(x, y);
     if (el) el.classList.add('selected');
   }
+}
+
+// Animates whatever's currently rendered at the two given cells sliding to
+// swap places (CSS transform, riding the .tile transition already defined),
+// then hands off to `callback` once the slide lands. Purely visual — the
+// caller is responsible for board data, which should already reflect the
+// end state so the elements arrive showing the right thing once re-rendered.
+function animateTileSwap(x1, y1, x2, y2, callback) {
+  const el1 = getTileEl(x1, y1);
+  const el2 = getTileEl(x2, y2);
+  if (!el1 || !el2) { callback(); return; }
+  const r1 = el1.getBoundingClientRect();
+  const r2 = el2.getBoundingClientRect();
+  const dx = r2.left - r1.left, dy = r2.top - r1.top;
+  el1.style.zIndex = el2.style.zIndex = 5;
+  el1.style.transform = `translate(${dx}px, ${dy}px)`;
+  el2.style.transform = `translate(${-dx}px, ${-dy}px)`;
+  setTimeout(callback, 160);
+}
+
+function swapBoardData(x1, y1, x2, y2) {
+  const tmpColor = board[y1][x1], tmpSpecial = boardSpecial[y1][x1];
+  board[y1][x1] = board[y2][x2];
+  boardSpecial[y1][x1] = boardSpecial[y2][x2];
+  board[y2][x2] = tmpColor;
+  boardSpecial[y2][x2] = tmpSpecial;
+}
+
+// Shared by both the tap and slide gestures. Slides the two tiles into
+// each other's spots (data swaps first, so the sliding tiles carry their
+// color/special with them), holds briefly so the swap actually reads as a
+// swap, then either resolves the match or slides back and reverts.
+function attemptSwap(x1, y1, x2, y2) {
+  if (boardFrozen || isAnimating) return;
+  if (!board[y1][x1] || !board[y2][x2]) return;
+  if (boardSpecial[y1][x1] === 'crystal' || boardSpecial[y2][x2] === 'crystal') {
+    log('Runic Crystals can\'t be swapped — tap one to activate it.');
+    return;
+  }
+
+  isAnimating = true;
+  setBoardLocked(true);
+  swapBoardData(x1, y1, x2, y2);
+
+  animateTileSwap(x1, y1, x2, y2, () => {
+    renderBoard();
+
+    const {hasMatches} = findMatchedCells();
+    const activationSeeds = [];
+    if (boardSpecial[y1][x1] === 'bomb') activationSeeds.push({x: x1, y: y1, color: board[y1][x1], type: 'bomb'});
+    if (boardSpecial[y2][x2] === 'bomb') activationSeeds.push({x: x2, y: y2, color: board[y2][x2], type: 'bomb'});
+
+    if (hasMatches || activationSeeds.length > 0) {
+      // Hold the swapped-but-not-yet-cleared state on screen for a beat so
+      // the swap itself reads clearly before tiles start disappearing.
+      const swapHint = [{x: x1, y: y1}, {x: x2, y: y2}];
+      setTimeout(() => processMatches(swapHint, activationSeeds), 220);
+    } else {
+      setTimeout(() => {
+        swapBoardData(x1, y1, x2, y2); // revert
+        animateTileSwap(x1, y1, x2, y2, () => {
+          renderBoard();
+          log('No match – swap reverted');
+          isAnimating = false;
+          setBoardLocked(false);
+        });
+      }, 260);
+    }
+  });
 }
 
 // ---------- INIT ----------
