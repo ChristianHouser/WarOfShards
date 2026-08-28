@@ -1017,6 +1017,12 @@ function onHeroCardClick(h) {
     log(`${h.name} needs at least ${cost} mana (has ${h.mana}).`);
     return;
   }
+  // No legal target at all (per Auto-target priority) -> don't attack, and
+  // say why, before ever spending mana or opening the Basic/Special modal.
+  if (getValidTargets(h).length === 0) {
+    log(`${h.name} has no legal target${h.type === 'melee' ? ' — every enemy is dead or still guarded' : ''}.`);
+    return;
+  }
   // Heroes with a Special get a Basic-vs-Special choice; normal characters
   // have only Basic, so their attack resolves immediately on tap.
   if (h.isSpecial) {
@@ -1050,7 +1056,7 @@ function resolveHeroAttack(attacker, attackType) {
   aimedTarget = null;
   refreshAimUI();
   if (!target) {
-    log(`${attacker.name} has no legal target.`);
+    log(`${attacker.name} has no legal target — attack cancelled.`);
     return;
   }
   performAttack(attacker, target, attackType);
