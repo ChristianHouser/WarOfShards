@@ -14,6 +14,7 @@
   }
 
   #app {
+    position: relative;
     display: flex;
     flex-direction: column;
     height: 100vh;
@@ -40,7 +41,9 @@
 
   #btn-end-turn {
     position: absolute;
-    top: 6px; right: 6px;
+    /* Sits right at the enemy-zone/board-zone boundary (enemy-zone is a
+       flat 50% of #app's height) — "just above" the Match-3 section. */
+    top: calc(50% - 26px); right: 6px;
     z-index: 20;
     background: #7a1f1fcc;
     color: #ffb3b3;
@@ -97,7 +100,7 @@
     flex: 0 0 50%;
     display: flex;
     flex-direction: column;
-    padding: 22px 6px 4px;
+    padding: 22px 6px 28px;
     border-bottom: 2px solid #0f3460;
     min-height: 0;
   }
@@ -360,6 +363,14 @@
   .modal-btn.basic   { background: #3498db; }
   .modal-btn.special { background: #e74c3c; }
   .modal-btn.cancel  { background: #555; font-size: 0.78rem; padding: 8px; }
+
+  /* The Hero ability popup is a contextual bubble above the tapped card,
+     not a screen-centered dialog — a much lighter backdrop (the board and
+     cards stay visible) and JS positions .modal-box directly via left/
+     bottom, so #attack-modal.show must NOT use the shared flex-centering. */
+  #attack-modal { background: rgba(0,0,0,0.35); }
+  #attack-modal.show { display: block; }
+  #attack-modal .modal-box { position: fixed; margin: 0; }
   .modal-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 </style>
 </head>
@@ -1051,10 +1062,28 @@ function onHeroCardClick(h) {
     btnBasic.disabled = h.mana < cost;
     btnSpecial.textContent = `Special (${SPECIAL_COST} mana → ${SPECIAL_DMG} dmg)${h.abilityText ? ' — ' + h.abilityText : ''}`;
     btnSpecial.disabled = h.mana < SPECIAL_COST;
+    positionModalAboveCard(h.el);
     document.getElementById('attack-modal').classList.add('show');
     return;
   }
   resolveHeroAttack(h, 'basic');
+}
+
+// Places the attack-modal's box directly above the tapped hero's card
+// (fixed left/bottom, computed from the card's own on-screen rect) instead
+// of the shared modal's screen-centered overlay, so the card stays visible
+// right below the popup rather than getting hidden underneath it.
+function positionModalAboveCard(cardEl) {
+  const modalBox = document.querySelector('#attack-modal .modal-box');
+  if (!cardEl || !modalBox) return;
+  const rect = cardEl.getBoundingClientRect();
+  const gap = 10;
+  const boxWidth = Math.min(260, window.innerWidth * 0.85);
+  modalBox.style.width = boxWidth + 'px';
+  let left = rect.left + rect.width / 2 - boxWidth / 2;
+  left = Math.max(8, Math.min(left, window.innerWidth - boxWidth - 8));
+  modalBox.style.left = left + 'px';
+  modalBox.style.bottom = (window.innerHeight - rect.top + gap) + 'px';
 }
 
 // Resolves an attack the instant a hero/ability is chosen: the pre-aimed
