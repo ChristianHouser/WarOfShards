@@ -1513,22 +1513,30 @@ function clearSelection() {
   selectedTile = null;
 }
 
+// Tapping a Runic Crystal on its own (nothing else selected, or the tap
+// doesn't complete an adjacent swap) activates it — same choice modal as
+// always. Counts as this turn's one board action, same as a swap.
+function activateCrystalTap(x, y) {
+  const el = getTileEl(x, y);
+  if (el) el.classList.add('selected');
+  isAnimating = true;
+  swapUsedThisTurn = true;
+  updateTurnUI();
+  setBoardLocked(true);
+  setTimeout(() => {
+    if (el) el.classList.remove('selected');
+    processMatches(null, [{x, y, color: board[y][x], type: 'crystal'}]);
+  }, 120);
+}
+
 function handleTap(x, y) {
   if (boardFrozen || isAnimating) return;
   if (!board[y][x]) return;
 
-  if (boardSpecial[y][x] === 'crystal') {
-    clearSelection();
-    const el = getTileEl(x, y);
-    if (el) el.classList.add('selected');
-    isAnimating = true;
-    swapUsedThisTurn = true;
-    updateTurnUI();
-    setBoardLocked(true);
-    setTimeout(() => {
-      if (el) el.classList.remove('selected');
-      processMatches(null, [{x, y, color: board[y][x], type: 'crystal'}]);
-    }, 120);
+  const isCrystal = boardSpecial[y][x] === 'crystal';
+
+  if (isCrystal && !selectedTile) {
+    activateCrystalTap(x, y);
     return;
   }
 
@@ -1544,7 +1552,12 @@ function handleTap(x, y) {
 
   const dx = Math.abs(x - x1), dy = Math.abs(y - y1);
   if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1)) {
+    // Adjacent to the pending selection — move/swap it in, same as any
+    // other tile, crystal included.
     attemptSwap(x1, y1, x, y);
+  } else if (isCrystal) {
+    // Not completing a swap — a lone tap on a crystal always activates it.
+    activateCrystalTap(x, y);
   } else {
     selectedTile = {x, y};
     const el = getTileEl(x, y);
@@ -1585,10 +1598,6 @@ function swapBoardData(x1, y1, x2, y2) {
 function attemptSwap(x1, y1, x2, y2) {
   if (boardFrozen || isAnimating) return;
   if (!board[y1][x1] || !board[y2][x2]) return;
-  if (boardSpecial[y1][x1] === 'crystal' || boardSpecial[y2][x2] === 'crystal') {
-    log('Runic Crystals can\'t be swapped — tap one to activate it.');
-    return;
-  }
 
   isAnimating = true;
   setBoardLocked(true);
