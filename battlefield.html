@@ -1105,6 +1105,19 @@ function performAttack(attacker, target, attackType) {
   updateHeroUI(attacker);
   updateHeroUI(target);
   checkWinLoss();
+  checkAutoEndPlayerTurn();
+}
+
+// Each hero gets one attack per turn. Once every living player hero has
+// used theirs, there's nothing left to do — end the turn automatically
+// (after a momentary pause) instead of making the player tap End Turn.
+function checkAutoEndPlayerTurn() {
+  if (boardFrozen || currentTurn !== 'player' || isAnimating) return;
+  if (!swapUsedThisTurn) return;
+  const living = heroes.filter(h => h.side === 'player' && !h.dead);
+  if (living.length === 0 || !living.every(h => h.actedThisTurn)) return;
+  log('All your heroes have attacked — enemy turn begins.');
+  transitionToEnemyTurn(700);
 }
 
 const attackModal = document.getElementById('attack-modal');
@@ -1132,15 +1145,25 @@ document.getElementById('btn-attack-cancel').addEventListener('click', () => {
 });
 
 // ---------- END TURN / ENEMY TURN ----------
-function endPlayerTurn() {
-  if (boardFrozen || currentTurn !== 'player') return;
-  if (!swapUsedThisTurn) { log('Swap a tile first.'); return; }
+// Shared by the manual End Turn button and the automatic "everyone's
+// attacked" case: clears any pending aim, flips to the enemy, and gives a
+// momentary pause before the enemy actually starts acting.
+function transitionToEnemyTurn(pauseMs) {
   aimedTarget = null;
   refreshAimUI();
   currentTurn = 'enemy';
   updateTurnUI();
+  setTimeout(runEnemyTurn, pauseMs);
+}
+
+// End Turn is for when the player still has an actionable hero (mana for
+// at least Basic) but chooses not to use it — e.g. banking a Hero's
+// Special for next turn instead of spending it now.
+function endPlayerTurn() {
+  if (boardFrozen || currentTurn !== 'player') return;
+  if (!swapUsedThisTurn) { log('Swap a tile first.'); return; }
   log('Enemy turn...');
-  setTimeout(runEnemyTurn, 500);
+  transitionToEnemyTurn(500);
 }
 document.getElementById('btn-end-turn').addEventListener('click', endPlayerTurn);
 
