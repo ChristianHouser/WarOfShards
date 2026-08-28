@@ -186,6 +186,18 @@
     animation: readyPulse 1.3s ease-in-out infinite;
     border-color: #ffd700;
   }
+  /* The mana bar itself pulses blue as soon as there's enough for a Basic
+     Attack (the "low level" attack) — starts well before a Hero's card
+     goes gold-ready (which needs full/Special mana) and keeps pulsing
+     until that mana is actually spent. */
+  @keyframes manaBarPulse {
+    0%, 100% { box-shadow: 0 0 3px 1px #00bfff77; }
+    50% { box-shadow: 0 0 9px 3px #4dd2ffee; }
+  }
+  .mana-bar-bg.basic-ready {
+    animation: manaBarPulse 1.1s ease-in-out infinite;
+    border-color: #4dd2ff;
+  }
 
   /* A matched tile's color flying to its hero's mana bar. */
   .mana-shard {
@@ -609,6 +621,8 @@ function updateHeroUI(h) {
   if (hpBarEl) hpBarEl.style.width = `${(h.hp / h.maxHp) * 100}%`;
   const barEl = h.el.querySelector('.mana-bar');
   if (barEl) barEl.style.width = `${(h.mana / h.maxMana) * 100}%`;
+  const barBgEl = h.el.querySelector('.mana-bar-bg');
+  if (barBgEl) barBgEl.classList.toggle('basic-ready', !h.dead && !h.actedThisTurn && h.mana >= basicCostFor(h));
 }
 
 function renderArmies() {
