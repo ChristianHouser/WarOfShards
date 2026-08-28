@@ -22,7 +22,9 @@
     width: 100vw;
     max-width: 560px;
     margin: 0 auto;
-    background: #1a1a2e;
+    background-color: #1a1a2e;
+    background-size: cover;
+    background-position: center;
   }
 
   #nav-back {
@@ -110,7 +112,7 @@
     align-items: center;
     justify-content: center;
     padding: 6px 8px;
-    background: #142042;
+    background: rgba(20, 32, 66, 0.6);
     min-height: 0;
   }
   #hero-zone {
@@ -229,46 +231,53 @@
     width: 9px; height: 9px;
     border-radius: 50%;
     border: 1px solid #000;
+    z-index: 2;
   }
-  .card-icon { font-size: 0.9rem; line-height: 1; flex-shrink: 0; }
-  .card-name {
-    font-size: 0.5rem;
-    line-height: 1.1;
-    color: #eee;
-    max-width: 100%;
-    overflow: hidden;
-    text-overflow: ellipsis;
-    white-space: nowrap;
-    text-align: center;
-    font-weight: 600;
-    flex-shrink: 0;
-  }
-  .hp-value {
-    font-size: 0.56rem;
-    line-height: 1;
-    color: #f88;
-    font-weight: bold;
-    flex-shrink: 0;
+  /* Enemy: type-based Idle/Impact/Attack art (no per-character variety).
+     Player: a per-character Portrait, drawn without repeats from the
+     matching-type pool until it's exhausted. No names on either — the
+     card art + color dot + coverage tag are the only identity shown. */
+  .card-art {
+    flex: 1 1 auto;
+    min-height: 0;
+    width: 100%;
+    object-fit: contain;
+    pointer-events: none;
+    user-select: none;
   }
   .hp-bar-bg {
-    width: 90%;
-    height: 4.5px;
+    width: 92%;
+    height: 10px;
     background: #0a0a12;
     border-radius: 3px;
     overflow: hidden;
     border: 1px solid #555;
     position: relative;
     flex-shrink: 0;
-    margin-bottom: 1px;
   }
   .hp-bar {
     height: 100%;
     width: 100%;
-    background: linear-gradient(90deg, #ff4d4d, #ff8a3d);
-    transition: width 0.35s ease-out;
+    background: linear-gradient(90deg, #2ecc71, #6fe89a);
+    transition: width 0.35s ease-out, background-color 0.3s ease;
+  }
+  /* Any character at or below 25% HP flips its bar red as a warning. */
+  .hp-bar.critical {
+    background: linear-gradient(90deg, #e74c3c, #ff6b6b);
+  }
+  .hp-value {
+    position: absolute;
+    right: 3px; top: 50%;
+    transform: translateY(-50%);
+    font-size: 0.42rem;
+    line-height: 1;
+    color: #fff;
+    font-weight: 800;
+    text-shadow: 0 1px 2px #000, 0 0 3px #000;
+    pointer-events: none;
   }
   .mana-bar-bg {
-    width: 90%;
+    width: 92%;
     height: 4.5px;
     background: #0a0a12;
     border-radius: 3px;
@@ -276,6 +285,7 @@
     border: 1px solid #555;
     position: relative;
     flex-shrink: 0;
+    margin-top: 2px;
   }
   .mana-bar {
     height: 100%;
@@ -445,6 +455,45 @@ const COLS = 7;
 const ROWS = 5;
 const TEAM_SIZE = 5; // 2 Ranged + 3 Melee per side, same shape as the prototype's TEAM_CAP
 
+// ---------- ART ----------
+// Enemies show one generic Idle/Impact/Attack sprite per type (no
+// per-character variety needed — they're interchangeable). Players show a
+// unique Portrait per character, drawn from the matching-type pool without
+// repeats until every distinct one has been used.
+const ART_BASE = 'Character Artwork';
+const CHAR_ART_FOLDERS = {
+  ranged: ['Female Crossbow (Range)', 'Male Archer (Range)', 'Male Longbow (Range)'],
+  melee: ['Male Spearman (Melee)', 'Male Swordman (Melee)', 'Male Swordman1 (Melee)', 'Male Warhammer (Melee)']
+};
+const ENEMY_ART_FOLDER = { ranged: 'Male Archer (Range)', melee: 'Male Spearman (Melee)' };
+const BATTLEFIELD_BACKGROUNDS = ['Battlefield Backgrounds/Day Forest Map.png', 'Battlefield Backgrounds/Night Forest Map.png'];
+
+function artPath(folder, file) { return encodeURI(`${ART_BASE}/${folder}/${file}`); }
+
+function assignEnemyArt(list) {
+  list.forEach(h => {
+    const folder = h.type === 'ranged' ? ENEMY_ART_FOLDER.ranged : ENEMY_ART_FOLDER.melee;
+    h.idleImg = artPath(folder, 'Idle.png');
+    h.impactImg = artPath(folder, 'Impact.png');
+    h.attackImg = artPath(folder, 'Attack.png');
+  });
+}
+
+function assignPlayerPortraits(list) {
+  ['ranged', 'melee'].forEach(type => {
+    const ofType = list.filter(h => h.type === type);
+    if (ofType.length === 0) return;
+    const pool = shuffledCopy(CHAR_ART_FOLDERS[type]);
+    ofType.forEach((h, i) => { h.portraitImg = artPath(pool[i % pool.length], 'Portrait.png'); });
+  });
+}
+
+function applyRandomBattlefieldBackground() {
+  const pick = BATTLEFIELD_BACKGROUNDS[Math.floor(Math.random() * BATTLEFIELD_BACKGROUNDS.length)];
+  const app = document.getElementById('app');
+  app.style.backgroundImage = `linear-gradient(rgba(8,10,20,0.4), rgba(8,10,20,0.6)), url("${encodeURI(pick)}")`;
+}
+
 // ---------- RANDOM SQUAD GENERATION ----------
 // No deployment/selection screen yet, so both sides get an auto-drawn squad
 // using the same constraints the prototype used for its enemy team: exactly
@@ -528,6 +577,9 @@ function createHero(charDef, side, extra) {
     dead: false,
     actedThisTurn: false,
     el: null,
+    portraitImg: null, // player only
+    idleImg: null, impactImg: null, attackImg: null, // enemy only
+    artTimer: null,
     laneIndex: extra.laneIndex != null ? extra.laneIndex : null,
     coverage: extra.coverage || null
   };
@@ -591,9 +643,11 @@ function loadDeployedPlayerSquad() {
 function buildArmies() {
   const deployed = loadDeployedPlayerSquad();
   playerHeroes = deployed || buildSquadHeroes(buildRandomSquad(), 'player');
+  assignPlayerPortraits(playerHeroes);
 
   const enemySquad = buildRandomSquad();
   const enemyAll = buildSquadHeroes(enemySquad, 'enemy');
+  assignEnemyArt(enemyAll);
   enemyRangedHeroes = enemyAll.filter(h => h.type === 'ranged');
   enemyMeleeHeroes = enemyAll.filter(h => h.type === 'melee');
   heroes = [...playerHeroes, ...enemyAll];
@@ -604,18 +658,18 @@ function buildHeroCardEl(h) {
   const card = document.createElement('div');
   card.className = `card ${h.side}` + (h.isSpecial ? ' special' : '');
   card.dataset.color = h.color;
+  const artSrc = h.side === 'enemy' ? h.idleImg : h.portraitImg;
   card.innerHTML = `
     <div class="card-color-dot" style="background:${COLOR_HEX[h.color] || h.color}"></div>
-    <div class="card-icon">${h.type === 'ranged' ? '🏹' : '⚔️'}</div>
-    <div class="card-name">${h.name}</div>
-    <div class="hp-value">${h.hp}</div>
+    <img class="card-art" src="${artSrc}" alt="">
+    ${h.type === 'melee' ? `<div class="coverage-tag">${coverageLabel(h.coverage)}</div>` : ''}
     <div class="hp-bar-bg">
       <div class="hp-bar" style="width:${(h.hp / h.maxHp) * 100}%"></div>
+      <div class="hp-value">${h.hp}</div>
     </div>
     <div class="mana-bar-bg">
       <div class="mana-bar" style="width:${(h.mana / h.maxMana) * 100}%"></div>
     </div>
-    ${h.type === 'melee' ? `<div class="coverage-tag">${coverageLabel(h.coverage)}</div>` : ''}
   `;
   card.addEventListener('click', () => onHeroCardClick(h));
   h.el = card;
@@ -629,7 +683,10 @@ function updateHeroUI(h) {
   const hpValEl = h.el.querySelector('.hp-value');
   if (hpValEl) hpValEl.textContent = h.hp;
   const hpBarEl = h.el.querySelector('.hp-bar');
-  if (hpBarEl) hpBarEl.style.width = `${(h.hp / h.maxHp) * 100}%`;
+  if (hpBarEl) {
+    hpBarEl.style.width = `${(h.hp / h.maxHp) * 100}%`;
+    hpBarEl.classList.toggle('critical', h.hp / h.maxHp <= 0.25);
+  }
   const barEl = h.el.querySelector('.mana-bar');
   if (barEl) barEl.style.width = `${(h.mana / h.maxMana) * 100}%`;
   const barBgEl = h.el.querySelector('.mana-bar-bg');
@@ -935,6 +992,20 @@ function checkWinLoss() {
   updateTurnUI();
 }
 
+// Enemies only — players show a fixed Portrait, no state art. Briefly
+// swaps the card's <img> to `tempSrc` (Impact on taking a hit, Attack when
+// this hero attacks), then reverts to its Idle image a couple moments later.
+function flashHeroArt(h, tempSrc, duration) {
+  if (!h || h.side !== 'enemy' || !h.el || !tempSrc) return;
+  const img = h.el.querySelector('.card-art');
+  if (!img) return;
+  clearTimeout(h.artTimer);
+  img.src = tempSrc;
+  h.artTimer = setTimeout(() => {
+    if (img.isConnected) img.src = h.idleImg;
+  }, duration);
+}
+
 // Board-driven damage (Arcane Bomb, Runic Wave) always lands on the ENEMY
 // squad — the player's board is the only one in play right now.
 function dealBoardDamage(target, dmg, sourceLabel) {
@@ -946,6 +1017,7 @@ function dealBoardDamage(target, dmg, sourceLabel) {
     log(`${sourceLabel} defeated ${target.name}!`);
   } else {
     log(`${sourceLabel} hit ${target.name} for ${dmg} (${target.hp} HP left)`);
+    flashHeroArt(target, target.impactImg, 700);
   }
   updateHeroUI(target);
   checkWinLoss();
@@ -1131,6 +1203,7 @@ function performAttack(attacker, target, attackType) {
   }
 
   attacker.mana -= cost;
+  flashHeroArt(attacker, attacker.attackImg, 500);
   target.hp -= dmg;
   if (target.hp <= 0) {
     target.hp = 0;
@@ -1138,6 +1211,7 @@ function performAttack(attacker, target, attackType) {
     log(`${attacker.name}${usedSpecial ? ' ★' : ''} defeated ${target.name}!`);
   } else {
     log(`${attacker.name}${usedSpecial ? ' ★' : ''} hit ${target.name} for ${dmg} (${target.hp} HP left)`);
+    flashHeroArt(target, target.impactImg, 700);
   }
 
   if (attacker.simpleAbility === 'frenzy') {
@@ -1690,6 +1764,7 @@ function attemptSwap(x1, y1, x2, y2) {
 }
 
 // ---------- INIT ----------
+applyRandomBattlefieldBackground();
 buildArmies();
 renderArmies();
 fillBoardNoMatches();
