@@ -1540,18 +1540,33 @@ function activateCrystalTap(x, y) {
   }, 120);
 }
 
+// Tapping an Arcane Bomb on its own detonates it immediately — same
+// activation the bomb already gets from a swap that merely touches it, just
+// without needing a second tile at all. Counts as this turn's one board
+// action, same as a swap or a crystal tap.
+function detonateBombTap(x, y) {
+  const el = getTileEl(x, y);
+  if (el) el.classList.add('selected');
+  isAnimating = true;
+  swapUsedThisTurn = true;
+  updateTurnUI();
+  setBoardLocked(true);
+  setTimeout(() => {
+    if (el) el.classList.remove('selected');
+    processMatches(null, [{x, y, color: board[y][x], type: 'bomb'}]);
+  }, 120);
+}
+
 function handleTap(x, y) {
   if (boardFrozen || isAnimating) return;
   if (!board[y][x]) return;
 
   const isCrystal = boardSpecial[y][x] === 'crystal';
-
-  if (isCrystal && !selectedTile) {
-    activateCrystalTap(x, y);
-    return;
-  }
+  const isBomb = boardSpecial[y][x] === 'bomb';
 
   if (!selectedTile) {
+    if (isCrystal) { activateCrystalTap(x, y); return; }
+    if (isBomb) { detonateBombTap(x, y); return; }
     selectedTile = {x, y};
     const el = getTileEl(x, y);
     if (el) el.classList.add('selected');
@@ -1564,11 +1579,13 @@ function handleTap(x, y) {
   const dx = Math.abs(x - x1), dy = Math.abs(y - y1);
   if ((dx === 1 && dy === 0) || (dx === 0 && dy === 1)) {
     // Adjacent to the pending selection — move/swap it in, same as any
-    // other tile, crystal included.
+    // other tile (a bomb still detonates from the touch, same as any swap).
     attemptSwap(x1, y1, x, y);
   } else if (isCrystal) {
     // Not completing a swap — a lone tap on a crystal always activates it.
     activateCrystalTap(x, y);
+  } else if (isBomb) {
+    detonateBombTap(x, y);
   } else {
     selectedTile = {x, y};
     const el = getTileEl(x, y);
