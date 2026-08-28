@@ -38,6 +38,24 @@
     text-decoration: none;
   }
 
+  #btn-end-turn {
+    position: absolute;
+    top: 6px; right: 6px;
+    z-index: 20;
+    background: #7a1f1fcc;
+    color: #ffb3b3;
+    border: 1px solid #ff6b6b;
+    border-radius: 6px;
+    padding: 3px 8px;
+    font-size: 0.75rem;
+    font-weight: bold;
+    cursor: pointer;
+  }
+  #btn-end-turn:disabled {
+    opacity: 0.4;
+    cursor: not-allowed;
+  }
+
   #toast-log {
     position: absolute;
     top: 6px;
@@ -161,6 +179,25 @@
     cursor: pointer;
   }
   .card.player { cursor: pointer; }
+  @keyframes readyPulse {
+    0%, 100% { box-shadow: 0 0 6px 2px #ffd70088; }
+    50% { box-shadow: 0 0 15px 5px #ffd700dd; }
+  }
+  .card.ready:not(.selected) {
+    animation: readyPulse 1.3s ease-in-out infinite;
+    border-color: #ffd700;
+  }
+
+  /* A matched tile's color flying to its hero's mana bar. */
+  .mana-shard {
+    position: fixed;
+    width: 9px; height: 9px;
+    border-radius: 3px;
+    z-index: 60;
+    pointer-events: none;
+    box-shadow: 0 0 6px 2px #fff, 0 0 14px 5px currentColor;
+    transition: transform 0.42s cubic-bezier(.2,.7,.3,1), opacity 0.42s ease-in;
+  }
   @keyframes manaFlash {
     0% { box-shadow: 0 0 0 0 #00ffaa; }
     40% { box-shadow: 0 0 16px 4px #00ffaa; transform: scale(1.06); }
@@ -317,6 +354,7 @@
 
 <div id="app">
   <a id="nav-back" href="deploy.html">🛡 Deploy</a>
+  <button id="btn-end-turn" type="button" disabled>End Turn ⏭</button>
   <div id="toast-log"></div>
 
   <div id="enemy-zone">
@@ -464,6 +502,7 @@ function createHero(charDef, side, extra) {
     abilityText: charDef.abilityText,
     simpleAbility: charDef.simpleAbility,
     dead: false,
+    actedThisTurn: false,
     el: null,
     laneIndex: extra.laneIndex != null ? extra.laneIndex : null,
     coverage: extra.coverage || null
@@ -562,6 +601,7 @@ function buildHeroCardEl(h) {
 function updateHeroUI(h) {
   if (!h.el) return;
   h.el.classList.toggle('dead', h.dead);
+  h.el.classList.toggle('ready', !h.dead && !h.actedThisTurn && h.mana >= h.maxMana);
   const hpValEl = h.el.querySelector('.hp-value');
   if (hpValEl) hpValEl.textContent = h.hp;
   const hpBarEl = h.el.querySelector('.hp-bar');
@@ -593,11 +633,29 @@ function log(msg) {
   toastTimer = setTimeout(() => toastEl.classList.remove('show'), 2600);
 }
 
+// ---------- TURN STATE ----------
+// Turn order: (1) player swaps one tile (grants mana on a match), (2) player
+// may attack with any hero at full mana, tapping "End Turn" once done —
+// (3) enemy gains mana from its own (off-screen/"theoretical") board, then
+// (4) enemy attacks with whatever it can, using the same targeting rules.
+let currentTurn = 'player'; // 'player' | 'enemy'
+let swapUsedThisTurn = false; // a turn's one board action — a swap, or a crystal tap
+
+function updateTurnUI() {
+  const btn = document.getElementById('btn-end-turn');
+  if (boardFrozen) { btn.disabled = true; return; }
+  if (currentTurn === 'enemy') {
+    btn.textContent = 'Enemy Turn…';
+    btn.disabled = true;
+  } else {
+    btn.textContent = 'End Turn ⏭';
+    btn.disabled = !swapUsedThisTurn;
+  }
+}
+
 // ---------- MATCH-3 BOARD ----------
 // Ported near-verbatim from the prototype: same matching, gravity, and
-// special-tile (Arcane Bomb / Runic Crystal) rules. The prototype gated one
-// swap per player turn; that gate is dropped here since there's no attack
-// phase yet to bound a "turn" to — the board is just freely playable.
+// special-tile (Arcane Bomb / Runic Crystal) rules.
 let board = [];
 let boardSpecial = [];
 let selectedTile = null;
@@ -791,6 +849,52 @@ function grantMana(color, amount) {
   return matching.length;
 }
 
+// A matched tile doesn't just vanish — it becomes a small bright shard of
+// its own color and flies to the mana bar of the first living player hero
+// of that color (or drifts toward the hero zone in general if no hero of
+// that color is on the squad, since the match still happened on-screen).
+function spawnManaShard(fromRect, color) {
+  const shard = document.createElement('div');
+  shard.className = 'mana-shard';
+  const hex = COLOR_HEX[color] || color;
+  shard.style.background = hex;
+  shard.style.color = hex;
+  const fromX = fromRect.left + fromRect.width / 2;
+  const fromY = fromRect.top + fromRect.height / 2;
+  shard.style.left = fromX + 'px';
+  shard.style.top = fromY + 'px';
+  document.body.appendChild(shard);
+
+  const targetHero = heroes.find(h => h.side === 'player' && !h.dead && h.color === color && h.el);
+  let toX, toY;
+  if (targetHero) {
+    const barEl = targetHero.el.querySelector('.mana-bar-bg') || targetHero.el;
+    const r = barEl.getBoundingClientRect();
+    toX = r.left + r.width / 2;
+    toY = r.top + r.height / 2;
+  } else {
+    const zone = document.getElementById('hero-zone').getBoundingClientRect();
+    toX = zone.left + zone.width / 2;
+    toY = zone.top + 4;
+  }
+
+  requestAnimationFrame(() => {
+    shard.style.transform = `translate(${toX - fromX}px, ${toY - fromY}px) scale(0.25)`;
+    shard.style.opacity = '0';
+  });
+  setTimeout(() => shard.remove(), 460);
+}
+
+// Spawns one shard per cell, reading each tile's on-screen position before
+// the caller clears it from the board — must run before renderBoard() next
+// wipes/rebuilds the tile elements.
+function spawnShardsForCells(cells, color) {
+  (cells || []).forEach(c => {
+    const el = getTileEl(c.x, c.y);
+    if (el) spawnManaShard(el.getBoundingClientRect(), color);
+  });
+}
+
 // Shared by board-driven damage and hero attacks: ends the battle the
 // moment one side has no living heroes left.
 function checkWinLoss() {
@@ -802,6 +906,7 @@ function checkWinLoss() {
   const banner = document.getElementById('win-banner');
   banner.textContent = enemiesAlive === 0 ? '🎉 Victory! All enemies defeated.' : '💀 Defeat — all your heroes have fallen.';
   banner.classList.add('show');
+  updateTurnUI();
 }
 
 // Board-driven damage (Arcane Bomb, Runic Wave) always lands on the ENEMY
@@ -875,10 +980,19 @@ function onHeroCardClick(h) {
   if (boardFrozen || isAnimating || h.dead) return;
 
   if (h.side === 'player') {
+    if (currentTurn !== 'player') return;
+    if (!swapUsedThisTurn) {
+      log('Swap a tile first — attacks come after your swap.');
+      return;
+    }
     if (selectedHero === h) {
       selectedHero = null;
       refreshSelectionUI();
       log('Deselected.');
+      return;
+    }
+    if (h.actedThisTurn) {
+      log(`${h.name} already acted this turn.`);
       return;
     }
     const cost = basicCostFor(h);
@@ -963,6 +1077,7 @@ function performAttack(attacker, target, attackType) {
     if (attacker.mana > before) log(`${attacker.name}'s Frenzy grants +1 mana.`);
   }
 
+  attacker.actedThisTurn = true;
   updateHeroUI(attacker);
   updateHeroUI(target);
   selectedHero = null;
@@ -998,6 +1113,73 @@ document.getElementById('btn-attack-cancel').addEventListener('click', () => {
   attackModal.classList.remove('show');
   log('Attack cancelled.');
 });
+
+// ---------- END TURN / ENEMY TURN ----------
+function endPlayerTurn() {
+  if (boardFrozen || currentTurn !== 'player') return;
+  if (!swapUsedThisTurn) { log('Swap a tile first.'); return; }
+  selectedHero = null;
+  refreshSelectionUI();
+  currentTurn = 'enemy';
+  updateTurnUI();
+  log('Enemy turn...');
+  setTimeout(runEnemyTurn, 500);
+}
+document.getElementById('btn-end-turn').addEventListener('click', endPlayerTurn);
+
+// Enemy has no visible board of its own — it "gains mana from its
+// theoretical match-3 board" by granting a modest, random-color batch of
+// mana to its own matching-color heroes, same size as an ordinary 3-match.
+function runEnemyManaPhase() {
+  const color = randomColor();
+  const amount = 3;
+  const matching = heroes.filter(h => h.side === 'enemy' && !h.dead && h.color === color);
+  matching.forEach(h => {
+    h.mana = Math.min(h.maxMana, h.mana + amount);
+    updateHeroUI(h);
+  });
+  log(`Enemy's board matches ${color} — enemy gains mana.`);
+}
+
+// Same getValidTargets/performAttack the player uses — the enemy just
+// auto-picks the first legal target for each hero that can afford to act,
+// one at a time with a short pause so the player can follow along.
+function runEnemyAttacks(attackers, idx) {
+  if (boardFrozen) return;
+  if (idx >= attackers.length) { endEnemyTurn(); return; }
+  const attacker = attackers[idx];
+  if (attacker.dead || attacker.mana < basicCostFor(attacker)) {
+    runEnemyAttacks(attackers, idx + 1);
+    return;
+  }
+  const targets = getValidTargets(attacker);
+  if (targets.length === 0) {
+    runEnemyAttacks(attackers, idx + 1);
+    return;
+  }
+  const target = targets[0];
+  const attackType = (attacker.isSpecial && attacker.mana >= SPECIAL_COST) ? 'special' : 'basic';
+  performAttack(attacker, target, attackType);
+  setTimeout(() => runEnemyAttacks(attackers, idx + 1), 700);
+}
+
+function runEnemyTurn() {
+  if (boardFrozen) return;
+  runEnemyManaPhase();
+  setTimeout(() => {
+    const attackers = heroes.filter(h => h.side === 'enemy' && !h.dead);
+    runEnemyAttacks(attackers, 0);
+  }, 700);
+}
+
+function endEnemyTurn() {
+  if (boardFrozen) return;
+  heroes.forEach(h => { h.actedThisTurn = false; updateHeroUI(h); });
+  swapUsedThisTurn = false;
+  currentTurn = 'player';
+  updateTurnUI();
+  log('Your turn — swap a tile.');
+}
 
 // Runic Crystal Option B: a wave travels down both ranged lanes and hits
 // the first living enemy it meets in each — full 3 to an exposed Ranged
@@ -1035,10 +1217,12 @@ function applyBombExplosion(item, toClear, explosionQueue, queuedKeys, logParts)
   const selfColor = item.color || board[y][x];
   if (!toClear.has(selfKey) && selfColor) {
     toClear.add(selfKey);
+    spawnShardsForCells([{x, y}], selfColor);
     grantMana(selfColor, 1);
     logParts.push(`${selfColor} +1 (bomb core)`);
   }
   const affected = {};
+  const affectedCells = {};
   [{x: x + 1, y}, {x: x - 1, y}, {x, y: y + 1}, {x, y: y - 1}].forEach(n => {
     if (n.x < 0 || n.x >= COLS || n.y < 0 || n.y >= ROWS) return;
     const k = `${n.x},${n.y}`;
@@ -1046,6 +1230,7 @@ function applyBombExplosion(item, toClear, explosionQueue, queuedKeys, logParts)
     if (!nColor || toClear.has(k)) return;
     toClear.add(k);
     affected[nColor] = (affected[nColor] || 0) + 1;
+    (affectedCells[nColor] = affectedCells[nColor] || []).push({x: n.x, y: n.y});
     const nType = boardSpecial[n.y][n.x];
     if (nType && !queuedKeys.has(k)) {
       queuedKeys.add(k);
@@ -1053,6 +1238,7 @@ function applyBombExplosion(item, toClear, explosionQueue, queuedKeys, logParts)
     }
   });
   Object.entries(affected).forEach(([c, cnt]) => {
+    spawnShardsForCells(affectedCells[c], c);
     grantMana(c, cnt);
     logParts.push(`${c} +${cnt} (bomb blast)`);
   });
@@ -1071,11 +1257,13 @@ function applyCrystalEffect(item, choice, toClear, explosionQueue, queuedKeys, l
   const selfKey = `${x},${y}`;
   if (!toClear.has(selfKey)) {
     toClear.add(selfKey);
+    spawnShardsForCells([{x, y}], color);
     grantMana(color, 1);
     logParts.push(`${color} +1 (crystal)`);
   }
   if (choice === 'clear') {
     let count = 0;
+    const clearedCells = [];
     for (let yy = 0; yy < ROWS; yy++) {
       for (let xx = 0; xx < COLS; xx++) {
         if (board[yy][xx] !== color) continue;
@@ -1083,11 +1271,13 @@ function applyCrystalEffect(item, choice, toClear, explosionQueue, queuedKeys, l
         if (toClear.has(k)) continue;
         toClear.add(k);
         count++;
+        clearedCells.push({x: xx, y: yy});
         const t = boardSpecial[yy][xx];
         if (t && !queuedKeys.has(k)) { queuedKeys.add(k); explosionQueue.push({x: xx, y: yy, type: t}); }
       }
     }
     if (count > 0) {
+      spawnShardsForCells(clearedCells, color);
       grantMana(color, count);
       logParts.push(`${color} +${count} (Runic Crystal: Clear Color)`);
     }
@@ -1178,6 +1368,7 @@ function processMatches(swapHint, activationSeeds) {
     });
     if (spawnCell) spawns.push({x: spawnCell.x, y: spawnCell.y, color: group.color, type: spawnType});
     const gain = group.cells.length;
+    spawnShardsForCells(group.cells.filter(c => !(spawnCell && c.x === spawnCell.x && c.y === spawnCell.y)), group.color);
     const grantedTo = grantMana(group.color, gain);
     logParts.push(`${group.color} +${gain}${spawnCell ? ` (spawns ${spawnType === 'crystal' ? 'Runic Crystal' : 'Arcane Bomb'})` : ''}${grantedTo === 0 ? ' (no hero of this color)' : ''}`);
   });
@@ -1227,6 +1418,11 @@ let gestureState = null; // {x, y, startClientX, startClientY, moved}
 
 function onTilePointerDown(e, x, y) {
   if (boardFrozen || isAnimating) return;
+  if (currentTurn !== 'player') return;
+  if (swapUsedThisTurn) {
+    log('You already used this turn\'s board action — attack with a ready hero, or End Turn.');
+    return;
+  }
   if (!board[y][x]) return;
   gestureState = { x, y, startClientX: e.clientX, startClientY: e.clientY, moved: false };
   window.addEventListener('pointermove', onTilePointerMove);
@@ -1280,6 +1476,8 @@ function handleTap(x, y) {
     const el = getTileEl(x, y);
     if (el) el.classList.add('selected');
     isAnimating = true;
+    swapUsedThisTurn = true;
+    updateTurnUI();
     setBoardLocked(true);
     setTimeout(() => {
       if (el) el.classList.remove('selected');
@@ -1359,6 +1557,8 @@ function attemptSwap(x1, y1, x2, y2) {
     if (boardSpecial[y2][x2] === 'bomb') activationSeeds.push({x: x2, y: y2, color: board[y2][x2], type: 'bomb'});
 
     if (hasMatches || activationSeeds.length > 0) {
+      swapUsedThisTurn = true;
+      updateTurnUI();
       // Hold the swapped-but-not-yet-cleared state on screen for a beat so
       // the swap itself reads clearly before tiles start disappearing.
       const swapHint = [{x: x1, y: y1}, {x: x2, y: y2}];
@@ -1382,7 +1582,8 @@ buildArmies();
 renderArmies();
 fillBoardNoMatches();
 renderBoard();
-log('Match tiles to power up your heroes. Bombs (4-in-a-row) and Runic Crystals (5+) hit the enemy squad above.');
+updateTurnUI();
+log('Your turn — swap a tile to begin.');
 </script>
 </body>
 </html>
