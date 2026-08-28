@@ -108,7 +108,11 @@
     background-position: center;
   }
   #board-zone {
-    flex: 0 0 38%;
+    /* Sized generously for a 7:5 board, but the board itself is now capped
+       to actual square tiles (see #board's aspect-ratio) rather than
+       stretching to fill this whole band — the leftover height in most
+       viewports goes to #hero-zone below instead. */
+    flex: 0 0 34%;
     display: flex;
     align-items: center;
     justify-content: center;
@@ -117,7 +121,7 @@
     min-height: 0;
   }
   #hero-zone {
-    flex: 0 0 12%;
+    flex: 0 0 16%;
     display: flex;
     flex-direction: column;
     padding: 4px 6px;
@@ -301,11 +305,20 @@
     transition: width 0.35s ease-out;
   }
   .card.enemy .mana-bar { background: linear-gradient(90deg, #f5576c, #f093fb); }
+  /* Overlaid on the portrait/idle art (not a flex child) so a Melee card's
+     shield indicator doesn't shrink the art to make room for it. */
   .coverage-tag {
+    position: absolute;
+    left: 3px;
+    bottom: 20px;
+    z-index: 2;
     font-size: 0.44rem;
     color: #9be;
     line-height: 1;
-    flex-shrink: 0;
+    background: #0009;
+    padding: 1px 3px;
+    border-radius: 4px;
+    pointer-events: none;
   }
 
   /* ===== MATCH-3 BOARD ===== */
@@ -319,12 +332,18 @@
   }
   #board-wrap.locked { opacity: 0.55; }
   #board {
+    /* 7:5 tiles must render square — fill the wrap's height and let width
+       follow from the aspect ratio (capped at 100% so a narrow viewport
+       shrinks by width instead of overflowing), rather than stretching
+       independently to fill both axes. */
+    aspect-ratio: 7 / 5;
+    height: 100%;
+    width: auto;
+    max-width: 100%;
     display: grid;
     grid-template-columns: repeat(7, 1fr);
     grid-template-rows: repeat(5, 1fr);
     gap: 3px;
-    width: 100%;
-    height: 100%;
     touch-action: none;
   }
   .tile {
