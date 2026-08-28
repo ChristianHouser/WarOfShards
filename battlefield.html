@@ -1108,15 +1108,20 @@ function performAttack(attacker, target, attackType) {
   checkAutoEndPlayerTurn();
 }
 
-// Each hero gets one attack per turn. Once every living player hero has
-// used theirs, there's nothing left to do — end the turn automatically
-// (after a momentary pause) instead of making the player tap End Turn.
+// Each hero gets one attack per turn. Once every living player hero is
+// "resolved" — it already attacked, OR it simply can't afford its own
+// Basic Attack and never will this turn (mana only grows from here, but
+// there's nothing left to swap for) — there's nothing left to do, so end
+// the turn automatically (after a momentary pause) instead of making the
+// player tap End Turn.
 function checkAutoEndPlayerTurn() {
   if (boardFrozen || currentTurn !== 'player' || isAnimating) return;
   if (!swapUsedThisTurn) return;
   const living = heroes.filter(h => h.side === 'player' && !h.dead);
-  if (living.length === 0 || !living.every(h => h.actedThisTurn)) return;
-  log('All your heroes have attacked — enemy turn begins.');
+  if (living.length === 0) return;
+  const allResolved = living.every(h => h.actedThisTurn || h.mana < basicCostFor(h));
+  if (!allResolved) return;
+  log('No more heroes can act — enemy turn begins.');
   transitionToEnemyTurn(700);
 }
 
@@ -1368,6 +1373,7 @@ function processMatches(swapHint, activationSeeds) {
     isAnimating = false;
     selectedTile = null;
     setBoardLocked(false);
+    checkAutoEndPlayerTurn();
     return;
   }
 
@@ -1438,6 +1444,7 @@ function processMatches(swapHint, activationSeeds) {
           isAnimating = false;
           selectedTile = null;
           setBoardLocked(false);
+          checkAutoEndPlayerTurn();
         }
       }, 220);
     }, 280);
