@@ -1225,29 +1225,19 @@ function endEnemyTurn() {
   log('Your turn — swap a tile.');
 }
 
-// Runic Crystal Option B: a wave travels down both ranged lanes and hits
-// the first living enemy it meets in each — full 3 to an exposed Ranged
-// unit, full 3 to a guarding Melee, or a 2 "half exposed" hit through a
-// Melee that's straddling both lanes (boundary coverage).
+// Runic Crystal Option B: the wave comes from the player toward the enemy
+// (once there's art for it) and travels down each enemy lane independently,
+// hitting at most one target per lane/column — full 3 to a guarding Melee,
+// or full 3 to a Ranged unit only if that lane is fully exposed (no Melee
+// covering it at all, aligned or boundary). A Ranged unit only partially
+// covered by a boundary guard takes no damage for now.
 function resolveRunicWaveHits() {
   const hits = [];
-  const exposedLaneByMelee = new Map();
   for (let lane = 0; lane < 2; lane++) {
     const guard = heroes.find(h => h.side === 'enemy' && h.type === 'melee' && !h.dead && coverageIncludesLane(h.coverage, lane));
     const rangedHere = heroes.find(h => h.side === 'enemy' && h.type === 'ranged' && !h.dead && h.laneIndex === lane);
     if (guard) {
       if (!hits.some(hh => hh.hero === guard)) hits.push({hero: guard, dmg: 3});
-      if (rangedHere) {
-        if (guard.coverage.type === 'aligned') {
-          // fully protected — no damage
-        } else {
-          if (!exposedLaneByMelee.has(guard)) {
-            const [a, b] = guard.coverage.lanes;
-            exposedLaneByMelee.set(guard, Math.random() < 0.5 ? a : b);
-          }
-          if (exposedLaneByMelee.get(guard) === lane) hits.push({hero: rangedHere, dmg: 2});
-        }
-      }
     } else if (rangedHere) {
       hits.push({hero: rangedHere, dmg: 3});
     }
