@@ -235,6 +235,12 @@
      specificity) so it wins regardless of a card's color. State outlines
      (selected/ready/critical) still work — they're box-shadow, not fill. */
   .card.enemy { background: transparent; border-color: transparent; }
+  /* .special's permanent silver box-shadow (the Hero indicator) isn't a
+     gameplay state like selected/ready, so .card.enemy alone doesn't touch
+     it — it needs this more specific override to actually disappear, without
+     also zeroing box-shadow generally (which would break the aim/ready glow
+     on enemy cards, since .selected has equal specificity to .card.enemy). */
+  .card.enemy.special { border-color: transparent; box-shadow: none; }
 
   .card-color-dot {
     position: absolute;
@@ -258,7 +264,7 @@
   }
   .hp-bar-bg {
     width: 92%;
-    height: 13px;
+    height: 10px;
     background: #0a0a12;
     border-radius: 3px;
     overflow: hidden;
