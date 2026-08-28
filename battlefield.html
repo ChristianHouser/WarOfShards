@@ -169,16 +169,15 @@
   .card.special { border-color: #c0c0c0; box-shadow: 0 0 6px #c0c0c088; }
   .card.dead { opacity: 0.25; filter: grayscale(1); }
   .card.gained { animation: manaFlash 0.6s ease; }
+  /* Reused for the player's currently aimed enemy (tap an enemy to aim,
+     tap a ready hero to fire at it — or auto-target if nothing's aimed). */
   .card.selected {
     box-shadow: 0 0 0 3px #00ffaa, 0 0 12px #00ffaa88;
     transform: scale(1.05);
     z-index: 3;
   }
-  .card.targetable {
-    box-shadow: 0 0 0 2px #ffd700, 0 0 10px #ffd70088;
-    cursor: pointer;
-  }
   .card.player { cursor: pointer; }
+  .card.enemy:not(.dead) { cursor: pointer; }
   @keyframes readyPulse {
     0%, 100% { box-shadow: 0 0 6px 2px #ffd70088; }
     50% { box-shadow: 0 0 15px 5px #ffd700dd; }
@@ -959,83 +958,102 @@ function getValidTargets(attacker) {
   return [...enemyMelee, ...reachableRanged];
 }
 
-let selectedHero = null;        // the player hero currently chosen to attack
-let selectedAttackType = 'basic'; // 'basic' | 'special'
+let aimedTarget = null;         // enemy the player has pre-aimed by tapping it
 let pendingActionHero = null;   // hero awaiting a Basic/Special choice in the modal
 
-// Highlights the selected attacker and every enemy currently reachable by
-// it, and clears those highlights entirely when nothing's selected.
-function refreshSelectionUI() {
+// Among LEGAL targets (see getValidTargets): highest mana wins, ties broken
+// by lowest HP. Used whenever an attack resolves without an aimed target —
+// both the player's un-aimed taps and every enemy AI attack.
+function pickAutoTarget(attacker) {
+  const targets = getValidTargets(attacker);
+  if (targets.length === 0) return null;
+  let best = targets[0];
+  for (const t of targets) {
+    if (t.mana > best.mana || (t.mana === best.mana && t.hp < best.hp)) best = t;
+  }
+  return best;
+}
+
+// Highlights whichever enemy is currently aimed (blue ring, reusing the
+// .selected style). There's no "selected attacker" state anymore — tapping
+// a ready hero resolves its attack immediately (aimed target if one's set,
+// else auto-target), so nothing needs to visually wait for a target tap.
+function refreshAimUI() {
   heroes.forEach(h => {
     if (!h.el) return;
-    h.el.classList.toggle('selected', h === selectedHero);
-    h.el.classList.remove('targetable');
+    h.el.classList.toggle('selected', h === aimedTarget);
   });
-  if (selectedHero) {
-    getValidTargets(selectedHero).forEach(h => { if (h.el) h.el.classList.add('targetable'); });
-  }
 }
 
 function onHeroCardClick(h) {
   if (boardFrozen || isAnimating || h.dead) return;
 
-  if (h.side === 'player') {
+  if (h.side === 'enemy') {
+    // Tapping an enemy just marks (or clears) where your NEXT attack should
+    // go — it's not itself an action, so it's allowed any time on your turn.
     if (currentTurn !== 'player') return;
-    if (!swapUsedThisTurn) {
-      log('Swap a tile first — attacks come after your swap.');
-      return;
+    if (aimedTarget === h) {
+      aimedTarget = null;
+      log('Aim cleared.');
+    } else {
+      aimedTarget = h;
+      log(`Aiming at ${h.name} — tap a ready hero to attack.`);
     }
-    if (selectedHero === h) {
-      selectedHero = null;
-      refreshSelectionUI();
-      log('Deselected.');
-      return;
-    }
-    if (h.actedThisTurn) {
-      log(`${h.name} already acted this turn.`);
-      return;
-    }
-    const cost = basicCostFor(h);
-    if (h.mana < cost) {
-      log(`${h.name} needs at least ${cost} mana (has ${h.mana}).`);
-      return;
-    }
-    // Heroes with a Special get a Basic-vs-Special choice; normal
-    // characters have only Basic, so they select straight away.
-    if (h.isSpecial) {
-      pendingActionHero = h;
-      document.getElementById('attack-modal-title').textContent =
-        `${h.name} ★${h.abilityName ? ' — ' + h.abilityName : ''} (mana: ${h.mana}/${h.maxMana})`;
-      const btnBasic = document.getElementById('btn-attack-basic');
-      const btnSpecial = document.getElementById('btn-attack-special');
-      btnBasic.textContent = `Basic (${cost} mana → ${basicDmgFor(h)} dmg)`;
-      btnBasic.disabled = h.mana < cost;
-      btnSpecial.textContent = `Special (${SPECIAL_COST} mana → ${SPECIAL_DMG} dmg)${h.abilityText ? ' — ' + h.abilityText : ''}`;
-      btnSpecial.disabled = h.mana < SPECIAL_COST;
-      document.getElementById('attack-modal').classList.add('show');
-      return;
-    }
-    selectedHero = h;
-    selectedAttackType = 'basic';
-    refreshSelectionUI();
-    log(`Selected ${h.name}. Tap an enemy to attack.`);
+    refreshAimUI();
     return;
   }
 
-  // Enemy card tapped — only meaningful once an attacker is selected.
-  if (!selectedHero) {
-    log('Select one of your heroes below first.');
+  if (currentTurn !== 'player') return;
+  if (!swapUsedThisTurn) {
+    log('Swap a tile first — attacks come after your swap.');
     return;
   }
-  if (!getValidTargets(selectedHero).includes(h)) {
-    if (selectedHero.type === 'melee' && h.type === 'ranged') {
-      log(`${selectedHero.name}'s melee can't reach ${h.name} — an enemy melee unit is guarding that lane.`);
-    } else {
-      log('Not a valid target.');
-    }
+  if (h.actedThisTurn) {
+    log(`${h.name} already acted this turn.`);
     return;
   }
-  performAttack(selectedHero, h, selectedAttackType);
+  const cost = basicCostFor(h);
+  if (h.mana < cost) {
+    log(`${h.name} needs at least ${cost} mana (has ${h.mana}).`);
+    return;
+  }
+  // Heroes with a Special get a Basic-vs-Special choice; normal characters
+  // have only Basic, so their attack resolves immediately on tap.
+  if (h.isSpecial) {
+    pendingActionHero = h;
+    document.getElementById('attack-modal-title').textContent =
+      `${h.name} ★${h.abilityName ? ' — ' + h.abilityName : ''} (mana: ${h.mana}/${h.maxMana})`;
+    const btnBasic = document.getElementById('btn-attack-basic');
+    const btnSpecial = document.getElementById('btn-attack-special');
+    btnBasic.textContent = `Basic (${cost} mana → ${basicDmgFor(h)} dmg)`;
+    btnBasic.disabled = h.mana < cost;
+    btnSpecial.textContent = `Special (${SPECIAL_COST} mana → ${SPECIAL_DMG} dmg)${h.abilityText ? ' — ' + h.abilityText : ''}`;
+    btnSpecial.disabled = h.mana < SPECIAL_COST;
+    document.getElementById('attack-modal').classList.add('show');
+    return;
+  }
+  resolveHeroAttack(h, 'basic');
+}
+
+// Resolves an attack the instant a hero/ability is chosen: the pre-aimed
+// enemy if one was tapped and is still a legal target, otherwise the
+// Auto-target priority (highest mana, ties by lowest HP).
+function resolveHeroAttack(attacker, attackType) {
+  const legal = getValidTargets(attacker);
+  let target;
+  if (aimedTarget && legal.includes(aimedTarget)) {
+    target = aimedTarget;
+  } else {
+    if (aimedTarget) log(`${attacker.name} can't reach ${aimedTarget.name} — auto-targeting instead.`);
+    target = pickAutoTarget(attacker);
+  }
+  aimedTarget = null;
+  refreshAimUI();
+  if (!target) {
+    log(`${attacker.name} has no legal target.`);
+    return;
+  }
+  performAttack(attacker, target, attackType);
 }
 
 function performAttack(attacker, target, attackType) {
@@ -1080,9 +1098,6 @@ function performAttack(attacker, target, attackType) {
   attacker.actedThisTurn = true;
   updateHeroUI(attacker);
   updateHeroUI(target);
-  selectedHero = null;
-  selectedAttackType = 'basic';
-  refreshSelectionUI();
   checkWinLoss();
 }
 
@@ -1091,22 +1106,18 @@ document.getElementById('btn-attack-basic').addEventListener('click', () => {
   if (!pendingActionHero) return;
   const cost = basicCostFor(pendingActionHero);
   if (pendingActionHero.mana < cost) { log(`Not enough mana for Basic (need ${cost}).`); return; }
-  selectedHero = pendingActionHero;
-  selectedAttackType = 'basic';
+  const h = pendingActionHero;
   pendingActionHero = null;
   attackModal.classList.remove('show');
-  refreshSelectionUI();
-  log(`Selected ${selectedHero.name} — BASIC. Tap an enemy.`);
+  resolveHeroAttack(h, 'basic');
 });
 document.getElementById('btn-attack-special').addEventListener('click', () => {
   if (!pendingActionHero) return;
   if (pendingActionHero.mana < SPECIAL_COST) { log('Not enough mana for Special (need 5).'); return; }
-  selectedHero = pendingActionHero;
-  selectedAttackType = 'special';
+  const h = pendingActionHero;
   pendingActionHero = null;
   attackModal.classList.remove('show');
-  refreshSelectionUI();
-  log(`Selected ${selectedHero.name} — SPECIAL ★. Tap an enemy.`);
+  resolveHeroAttack(h, 'special');
 });
 document.getElementById('btn-attack-cancel').addEventListener('click', () => {
   pendingActionHero = null;
@@ -1118,8 +1129,8 @@ document.getElementById('btn-attack-cancel').addEventListener('click', () => {
 function endPlayerTurn() {
   if (boardFrozen || currentTurn !== 'player') return;
   if (!swapUsedThisTurn) { log('Swap a tile first.'); return; }
-  selectedHero = null;
-  refreshSelectionUI();
+  aimedTarget = null;
+  refreshAimUI();
   currentTurn = 'enemy';
   updateTurnUI();
   log('Enemy turn...');
@@ -1152,12 +1163,11 @@ function runEnemyAttacks(attackers, idx) {
     runEnemyAttacks(attackers, idx + 1);
     return;
   }
-  const targets = getValidTargets(attacker);
-  if (targets.length === 0) {
+  const target = pickAutoTarget(attacker);
+  if (!target) {
     runEnemyAttacks(attackers, idx + 1);
     return;
   }
-  const target = targets[0];
   const attackType = (attacker.isSpecial && attacker.mana >= SPECIAL_COST) ? 'special' : 'basic';
   performAttack(attacker, target, attackType);
   setTimeout(() => runEnemyAttacks(attackers, idx + 1), 700);
