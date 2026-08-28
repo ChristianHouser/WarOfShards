@@ -23,8 +23,6 @@
     max-width: 560px;
     margin: 0 auto;
     background-color: #1a1a2e;
-    background-size: cover;
-    background-position: center;
   }
 
   #nav-back {
@@ -105,6 +103,9 @@
     padding: 22px 6px 28px;
     border-bottom: 2px solid #0f3460;
     min-height: 0;
+    background-color: #1a1a2e;
+    background-size: cover;
+    background-position: center;
   }
   #board-zone {
     flex: 0 0 38%;
@@ -112,7 +113,7 @@
     align-items: center;
     justify-content: center;
     padding: 6px 8px;
-    background: rgba(20, 32, 66, 0.6);
+    background: #142042;
     min-height: 0;
   }
   #hero-zone {
@@ -224,6 +225,12 @@
   .card[data-color="blue"]   { background: linear-gradient(160deg, #1a2a4a, #2a2a4a); }
   .card[data-color="yellow"] { background: linear-gradient(160deg, #4a3a10, #2a2a4a); }
   .card[data-color="purple"] { background: linear-gradient(160deg, #3a1a4a, #2a2a4a); }
+
+  /* Enemy cards sit directly on the battlefield backdrop — no card chrome,
+     just the art/dot/bars. Comes after the color-gradient rules above (same
+     specificity) so it wins regardless of a card's color. State outlines
+     (selected/ready/critical) still work — they're box-shadow, not fill. */
+  .card.enemy { background: transparent; border-color: transparent; }
 
   .card-color-dot {
     position: absolute;
@@ -461,6 +468,7 @@ const TEAM_SIZE = 5; // 2 Ranged + 3 Melee per side, same shape as the prototype
 // unique Portrait per character, drawn from the matching-type pool without
 // repeats until every distinct one has been used.
 const ART_BASE = 'Character Artwork';
+const TYPE_DIR = { ranged: 'Range', melee: 'Melee' }; // top-level folders in Character Artwork
 const CHAR_ART_FOLDERS = {
   ranged: ['Female Crossbow (Range)', 'Male Archer (Range)', 'Male Longbow (Range)'],
   melee: ['Male Spearman (Melee)', 'Male Swordman (Melee)', 'Male Swordman1 (Melee)', 'Male Warhammer (Melee)']
@@ -468,30 +476,33 @@ const CHAR_ART_FOLDERS = {
 const ENEMY_ART_FOLDER = { ranged: 'Male Archer (Range)', melee: 'Male Spearman (Melee)' };
 const BATTLEFIELD_BACKGROUNDS = ['Battlefield Backgrounds/Day Forest Map.png', 'Battlefield Backgrounds/Night Forest Map.png'];
 
-function artPath(folder, file) { return encodeURI(`${ART_BASE}/${folder}/${file}`); }
+function artPath(type, folder, file) { return encodeURI(`${ART_BASE}/${TYPE_DIR[type]}/${folder}/${file}`); }
 
 function assignEnemyArt(list) {
   list.forEach(h => {
     const folder = h.type === 'ranged' ? ENEMY_ART_FOLDER.ranged : ENEMY_ART_FOLDER.melee;
-    h.idleImg = artPath(folder, 'Idle.png');
-    h.impactImg = artPath(folder, 'Impact.png');
-    h.attackImg = artPath(folder, 'Attack.png');
+    h.idleImg = artPath(h.type, folder, 'Idle.png');
+    h.impactImg = artPath(h.type, folder, 'Impact.png');
+    h.attackImg = artPath(h.type, folder, 'Attack.png');
   });
 }
 
+// Players only ever show Portrait.png — no Idle/Impact/Attack states.
 function assignPlayerPortraits(list) {
   ['ranged', 'melee'].forEach(type => {
     const ofType = list.filter(h => h.type === type);
     if (ofType.length === 0) return;
     const pool = shuffledCopy(CHAR_ART_FOLDERS[type]);
-    ofType.forEach((h, i) => { h.portraitImg = artPath(pool[i % pool.length], 'Portrait.png'); });
+    ofType.forEach((h, i) => { h.portraitImg = artPath(type, pool[i % pool.length], 'Portrait.png'); });
   });
 }
 
+// For now the random backdrop only shows behind the Enemy zone (above the
+// Match-3 section) — the board and hero row stay on their own solid panels.
 function applyRandomBattlefieldBackground() {
   const pick = BATTLEFIELD_BACKGROUNDS[Math.floor(Math.random() * BATTLEFIELD_BACKGROUNDS.length)];
-  const app = document.getElementById('app');
-  app.style.backgroundImage = `linear-gradient(rgba(8,10,20,0.4), rgba(8,10,20,0.6)), url("${encodeURI(pick)}")`;
+  const zone = document.getElementById('enemy-zone');
+  zone.style.backgroundImage = `linear-gradient(rgba(8,10,20,0.4), rgba(8,10,20,0.6)), url("${encodeURI(pick)}")`;
 }
 
 // ---------- RANDOM SQUAD GENERATION ----------
