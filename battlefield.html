@@ -492,17 +492,26 @@ const CHAR_ART_FOLDERS = {
   ranged: ['Female Crossbow (Range)', 'Male Archer (Range)', 'Male Longbow (Range)'],
   melee: ['Male Spearman (Melee)', 'Male Swordman (Melee)', 'Male Swordman1 (Melee)', 'Male Warhammer (Melee)']
 };
-const ENEMY_ART_FOLDER = { ranged: 'Male Archer (Range)', melee: 'Male Spearman (Melee)' };
 const BATTLEFIELD_BACKGROUNDS = ['Battlefield Backgrounds/Day Forest Map.png', 'Battlefield Backgrounds/Night Forest Map.png'];
 
 function artPath(type, folder, file) { return encodeURI(`${ART_BASE}/${TYPE_DIR[type]}/${folder}/${file}`); }
 
+// Enemies now draw from the same per-type pool as players (no repeats
+// until every distinct folder of that type has been used), just for the
+// Idle/Impact/Attack triplet instead of a single Portrait — so the enemy
+// squad actually looks varied instead of every Melee/Ranged unit being
+// the same character.
 function assignEnemyArt(list) {
-  list.forEach(h => {
-    const folder = h.type === 'ranged' ? ENEMY_ART_FOLDER.ranged : ENEMY_ART_FOLDER.melee;
-    h.idleImg = artPath(h.type, folder, 'Idle.png');
-    h.impactImg = artPath(h.type, folder, 'Impact.png');
-    h.attackImg = artPath(h.type, folder, 'Attack.png');
+  ['ranged', 'melee'].forEach(type => {
+    const ofType = list.filter(h => h.type === type);
+    if (ofType.length === 0) return;
+    const pool = shuffledCopy(CHAR_ART_FOLDERS[type]);
+    ofType.forEach((h, i) => {
+      const folder = pool[i % pool.length];
+      h.idleImg = artPath(type, folder, 'Idle.png');
+      h.impactImg = artPath(type, folder, 'Impact.png');
+      h.attackImg = artPath(type, folder, 'Attack.png');
+    });
   });
 }
 
