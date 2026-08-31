@@ -52,6 +52,27 @@
   }
   #btn-formation:active { transform: scale(0.97); }
 
+  /* ===== TUTORIAL MISSION BUTTON ===== */
+  #tutorial-bar { flex-shrink: 0; display: flex; justify-content: center; padding: 4px 8px 0; }
+  #btn-tutorial {
+    background: #16241a;
+    color: #7ee08a;
+    border: 1px solid #3f7a4a;
+    border-radius: 14px;
+    padding: 6px 16px;
+    font-size: 0.72rem;
+    font-weight: bold;
+    cursor: pointer;
+    text-align: center;
+  }
+  #btn-tutorial:active { transform: scale(0.97); }
+  #btn-tutorial.active {
+    background: #1f5c2e;
+    color: #baffc4;
+    border-color: #7ee08a;
+    box-shadow: 0 0 8px #7ee08a88;
+  }
+
   /* ===== MODAL ===== */
   .modal {
     display: none;
@@ -378,6 +399,10 @@
     <a class="nav-btn primary disabled" id="nav-battle" href="battlefield.html">Start Battle →</a>
   </div>
 
+  <div id="tutorial-bar">
+    <button id="btn-tutorial" type="button">☣ Tutorial Mission — Sewer Lord</button>
+  </div>
+
   <div id="placement-zone">
     <div class="placement-header">
       <span class="placement-label">Your Squad</span>
@@ -419,6 +444,20 @@
   </div>
 </div>
 
+<div id="tutorial-start-modal" class="modal">
+  <div class="modal-box">
+    <div class="modal-title">☣ Kill the Sewer Lord</div>
+    <div class="info-body" style="margin-bottom:10px;">Five waves stand between you and the Sewer Lord's den. Your heroes carry their HP and mana from wave to wave, so fight smart.</div>
+    <button class="preset-btn" data-tutorial-start="hints">📖 Play with Tutorial
+      <span class="preset-sub">Shows a few extra hints on match-3 and combat basics before Wave 1.</span>
+    </button>
+    <button class="preset-btn" data-tutorial-start="skip">⏭ Skip Tutorial
+      <span class="preset-sub">Jump straight into Wave 1 — Sewer Rats.</span>
+    </button>
+    <button class="modal-btn cancel" id="btn-tutorial-start-cancel">Cancel</button>
+  </div>
+</div>
+
 <div id="info-modal" class="modal">
   <div class="modal-box">
     <div id="info-body" class="info-body"></div>
@@ -444,6 +483,15 @@ const MAX_DEPLOYED = 5;    // shared cap across Back + Front combined — matche
 const BOUNDARY_FRACTION = 0.6; // 60% of the pitch between two slot centers counts as a "straddle" zone
 
 function charById(id) { return CHARACTERS.find(c => c.id === id); }
+
+// Tutorial Mission roster: 3 Melee (2 Heroes + 1 non-Hero) + 3 Ranged
+// (2 Heroes + 1 non-Hero) — a small, curated pool so a first-time player
+// isn't choosing from the full 45-character roster.
+const TUTORIAL_ROSTER_IDS = ['korr', 'rorik', 'kael_ironwood', 'joren', 'rook', 'lira_swiftarrow'];
+let tutorialMode = false;
+function fullRosterIds() {
+  return (tutorialMode ? TUTORIAL_ROSTER_IDS : CHARACTERS.map(c => c.id)).slice();
+}
 
 let deployAvailable = CHARACTERS.map(c => c.id);
 let playerPlacements = { back: new Array(BACK_SLOTS).fill(null), front: [] }; // front: {charId, band}[]
@@ -959,10 +1007,50 @@ function onFrontDragEnd(e) {
   updateStatus();
 }
 
+// ---------- TUTORIAL MISSION TOGGLE ----------
+// Toggling restricts (or restores) which characters can be picked. Since a
+// previously-deployed squad might include characters outside the new pool,
+// switching either direction resets the squad rather than leaving stale
+// placements around.
+document.getElementById('btn-tutorial').addEventListener('click', () => {
+  tutorialMode = !tutorialMode;
+  playerPlacements = { back: new Array(BACK_SLOTS).fill(null), front: [] };
+  deployAvailable = fullRosterIds();
+  sortDeployAvailable();
+  const btn = document.getElementById('btn-tutorial');
+  btn.classList.toggle('active', tutorialMode);
+  btn.textContent = tutorialMode ? '☣ Tutorial Mission: ON (tap to cancel)' : '☣ Tutorial Mission — Sewer Lord';
+  document.getElementById('nav-battle').textContent = tutorialMode ? 'Start Tutorial →' : 'Start Battle →';
+  renderRosterGrid();
+  renderPlacementZone();
+  updateStatus();
+  log(tutorialMode ? 'Tutorial Mission active — pick 3 Melee + 3 Ranged.' : 'Tutorial Mission off — full roster restored.');
+});
+
 // ---------- START BATTLE ----------
+const tutorialStartModal = document.getElementById('tutorial-start-modal');
 document.getElementById('nav-battle').addEventListener('click', (e) => {
-  if (placedCount() === 0) { e.preventDefault(); return; }
+  e.preventDefault();
+  if (placedCount() === 0) return;
+  if (tutorialMode) {
+    tutorialStartModal.classList.add('show');
+    return;
+  }
   localStorage.setItem('warOfShards.playerSquad', JSON.stringify(playerPlacements));
+  localStorage.removeItem('warOfShards.tutorialMode');
+  localStorage.removeItem('warOfShards.tutorialHints');
+  window.location.href = 'battlefield.html';
+});
+document.getElementById('btn-tutorial-start-cancel').addEventListener('click', () => {
+  tutorialStartModal.classList.remove('show');
+});
+tutorialStartModal.querySelectorAll('.preset-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    localStorage.setItem('warOfShards.playerSquad', JSON.stringify(playerPlacements));
+    localStorage.setItem('warOfShards.tutorialMode', '1');
+    localStorage.setItem('warOfShards.tutorialHints', btn.dataset.tutorialStart === 'hints' ? '1' : '0');
+    window.location.href = 'battlefield.html';
+  });
 });
 
 // ---------- FORMATION PRESETS ----------

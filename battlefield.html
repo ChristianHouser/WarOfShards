@@ -619,6 +619,8 @@ function createHero(charDef, side, extra) {
     abilityName: charDef.abilityName,
     abilityText: charDef.abilityText,
     simpleAbility: charDef.simpleAbility,
+    basicCost: charDef.basicCost != null ? charDef.basicCost : null,
+    basicDmg: charDef.basicDmg != null ? charDef.basicDmg : null,
     dead: false,
     actedThisTurn: false,
     el: null,
@@ -685,13 +687,158 @@ function loadDeployedPlayerSquad() {
   }
 }
 
+// ---------- TUTORIAL MISSION: KILL THE SEWER LORD ----------
+// A 5-wave scripted encounter, entered from deploy.html's Tutorial Mission
+// toggle. These enemies are plain stat blocks (no CHARACTERS.js entry, no
+// specials) rather than drawn from the roster — they only ever use their
+// Basic attack, so `dmg` below is really "basic attack damage". HP/mana
+// carry over between waves for the player's squad (no free heal), so the
+// fight gets harder to sustain as it goes, exactly as escalating "waves"
+// implies. The Sewer Lord is modeled as `type:'ranged'` purely so the
+// existing lane-coverage system shields him behind his two Brutes — he
+// doesn't actually shoot anything at range.
+const TUTORIAL_WAVES = [
+  { name: 'Wave 1 — Sewer Rats', enemies: [
+    { key: 'rat', name: 'Sewer Rat', type: 'melee', hp: 2, dmg: 1 },
+    { key: 'rat', name: 'Sewer Rat', type: 'melee', hp: 2, dmg: 1 },
+    { key: 'rat', name: 'Sewer Rat', type: 'melee', hp: 2, dmg: 1 }
+  ]},
+  { name: 'Wave 2 — Sludge Slimes', enemies: [
+    { key: 'slime', name: 'Sludge Slime', type: 'melee', hp: 2, dmg: 1 },
+    { key: 'slime', name: 'Sludge Slime', type: 'melee', hp: 2, dmg: 1 },
+    { key: 'slime', name: 'Sludge Slime', type: 'melee', hp: 2, dmg: 1 },
+    { key: 'spitter', name: 'Slime Spitter', type: 'ranged', hp: 2, dmg: 1 }
+  ]},
+  { name: 'Wave 3 — Drain Beetles', enemies: [
+    { key: 'beetle', name: 'Drain Beetle', type: 'melee', hp: 2, dmg: 1 },
+    { key: 'beetle', name: 'Drain Beetle', type: 'melee', hp: 2, dmg: 1 },
+    { key: 'beetle', name: 'Drain Beetle', type: 'melee', hp: 2, dmg: 1 },
+    { key: 'dungfly', name: 'Dung Fly', type: 'ranged', hp: 2, dmg: 1 },
+    { key: 'dungfly', name: 'Dung Fly', type: 'ranged', hp: 2, dmg: 1 }
+  ]},
+  { name: 'Wave 4 — Sewer Guard', enemies: [
+    { key: 'thug', name: 'Sewer Thug', type: 'melee', hp: 3, dmg: 1 },
+    { key: 'thug', name: 'Sewer Thug', type: 'melee', hp: 3, dmg: 1 },
+    { key: 'thug', name: 'Sewer Thug', type: 'melee', hp: 3, dmg: 1 },
+    { key: 'crossbow', name: 'Crossbow Rat', type: 'ranged', hp: 2, dmg: 1 },
+    { key: 'crossbow', name: 'Crossbow Rat', type: 'ranged', hp: 2, dmg: 1 }
+  ]},
+  { name: 'Boss — The Sewer Lord', isBoss: true, enemies: [
+    { key: 'brute', name: 'Sewer Brute', type: 'melee', hp: 4, dmg: 1 },
+    { key: 'brute', name: 'Sewer Brute', type: 'melee', hp: 4, dmg: 1 },
+    { key: 'lord', name: 'The Sewer Lord', type: 'ranged', hp: 8, dmg: 2 }
+  ]}
+];
+
+let waveMode = false;
+let tutorialShowHints = false;
+let currentWaveIndex = 0;
+
+function readTutorialFlags() {
+  try {
+    waveMode = localStorage.getItem('warOfShards.tutorialMode') === '1';
+    tutorialShowHints = localStorage.getItem('warOfShards.tutorialHints') === '1';
+  } catch (e) {
+    waveMode = false;
+    tutorialShowHints = false;
+  }
+}
+
+function createSewerHero(def, extra) {
+  return {
+    side: 'enemy',
+    charId: def.key + '_' + Math.random().toString(36).slice(2, 8),
+    name: def.name,
+    type: def.type,
+    color: COLORS[Math.floor(Math.random() * COLORS.length)],
+    hp: def.hp,
+    maxHp: def.hp,
+    mana: 0,
+    maxMana: BASIC_COST,
+    isSpecial: false,
+    abilityName: null,
+    abilityText: null,
+    simpleAbility: null,
+    basicCost: null,
+    basicDmg: def.dmg,
+    dead: false,
+    actedThisTurn: false,
+    el: null,
+    portraitImg: null, idleImg: null, impactImg: null, attackImg: null,
+    artTimer: null,
+    laneIndex: extra.laneIndex != null ? extra.laneIndex : null,
+    coverage: extra.coverage || null
+  };
+}
+
+// Same aligned/boundary coverage shape as meleeCoverageEntries, generalized
+// to however many ranged "lanes" a wave actually has: 0 lanes needs no
+// coverage at all, 1 lane means every melee guards it redundantly (the
+// front line has to be fully cleared, matching the boss's 2-Brute wall),
+// 2+ lanes reuses the classic aligned/boundary/aligned spread.
+function meleeCoverageForWave(meleeCount, rangedCount) {
+  if (rangedCount === 0) return new Array(meleeCount).fill(null);
+  if (rangedCount === 1) return new Array(meleeCount).fill({ type: 'aligned', lane: 0 });
+  const pattern = [];
+  for (let lane = 0; lane < rangedCount; lane++) {
+    pattern.push({ type: 'aligned', lane });
+    if (lane < rangedCount - 1) pattern.push({ type: 'boundary', lanes: [lane, lane + 1] });
+  }
+  return Array.from({ length: meleeCount }, (_, i) => pattern[i % pattern.length]);
+}
+
+function buildWaveRoster(wave) {
+  const rangedDefs = wave.enemies.filter(e => e.type === 'ranged');
+  const meleeDefs = wave.enemies.filter(e => e.type === 'melee');
+  const coverageList = meleeCoverageForWave(meleeDefs.length, rangedDefs.length);
+  const list = [];
+  rangedDefs.forEach((def, laneIndex) => list.push(createSewerHero(def, { laneIndex })));
+  meleeDefs.forEach((def, i) => list.push(createSewerHero(def, { coverage: coverageList[i] })));
+  return list;
+}
+
+function waveShortName(wave) {
+  return wave.name.replace(/^Wave \d+ — /, '').replace(/^Boss — /, '');
+}
+
+function updateWaveLabel(wave) {
+  const label = document.querySelector('#enemy-zone .zone-label');
+  if (!label) return;
+  label.textContent = waveMode ? `⚔ Enemy — Wave ${currentWaveIndex + 1}/${TUTORIAL_WAVES.length}: ${waveShortName(wave)}` : '⚔ Enemy';
+}
+
+// Swaps in the next wave's enemies while leaving the player's squad (and
+// its current HP/mana) untouched, then re-renders both rows.
+function advanceToNextWave() {
+  currentWaveIndex++;
+  const wave = TUTORIAL_WAVES[currentWaveIndex];
+  const enemyAll = buildWaveRoster(wave);
+  assignEnemyArt(enemyAll);
+  enemyRangedHeroes = enemyAll.filter(h => h.type === 'ranged');
+  enemyMeleeHeroes = enemyAll.filter(h => h.type === 'melee');
+  heroes = [...playerHeroes, ...enemyAll];
+  updateWaveLabel(wave);
+  renderArmies();
+  aimedTarget = null;
+  refreshAimUI();
+  log(`Wave cleared! ${wave.name} incoming...`);
+}
+
 function buildArmies() {
   const deployed = loadDeployedPlayerSquad();
   playerHeroes = deployed || buildSquadHeroes(buildRandomSquad(), 'player');
   assignPlayerPortraits(playerHeroes);
 
-  const enemySquad = buildRandomSquad();
-  const enemyAll = buildSquadHeroes(enemySquad, 'enemy');
+  readTutorialFlags();
+  let enemyAll;
+  if (waveMode) {
+    currentWaveIndex = 0;
+    const wave = TUTORIAL_WAVES[0];
+    enemyAll = buildWaveRoster(wave);
+    updateWaveLabel(wave);
+  } else {
+    enemyAll = buildSquadHeroes(buildRandomSquad(), 'enemy');
+  }
   assignEnemyArt(enemyAll);
   enemyRangedHeroes = enemyAll.filter(h => h.type === 'ranged');
   enemyMeleeHeroes = enemyAll.filter(h => h.type === 'melee');
@@ -1030,9 +1177,21 @@ function checkWinLoss() {
   const enemiesAlive = heroes.filter(h => h.side === 'enemy' && !h.dead).length;
   const playersAlive = heroes.filter(h => h.side === 'player' && !h.dead).length;
   if (enemiesAlive > 0 && playersAlive > 0) return;
-  boardFrozen = true;
   const banner = document.getElementById('win-banner');
-  banner.textContent = enemiesAlive === 0 ? '🎉 Victory! All enemies defeated.' : '💀 Defeat — all your heroes have fallen.';
+  if (playersAlive === 0) {
+    boardFrozen = true;
+    banner.textContent = '💀 Defeat — all your heroes have fallen.';
+    banner.classList.add('show');
+    updateTurnUI();
+    return;
+  }
+  // enemiesAlive === 0 from here on.
+  if (waveMode && currentWaveIndex < TUTORIAL_WAVES.length - 1) {
+    advanceToNextWave();
+    return;
+  }
+  boardFrozen = true;
+  banner.textContent = waveMode ? '🎉 Victory! The Sewer Lord has fallen.' : '🎉 Victory! All enemies defeated.';
   banner.classList.add('show');
   updateTurnUI();
 }
@@ -1816,6 +1975,16 @@ fillBoardNoMatches();
 renderBoard();
 updateTurnUI();
 log('Your turn — swap a tile to begin.');
+
+if (waveMode && tutorialShowHints) {
+  const hints = [
+    'Swipe or tap two adjacent tiles to swap them — match 3+ of the same color to score.',
+    'Matched tiles turn into mana shards for your heroes of that color.',
+    'When a hero glows, tap it to attack — tap an enemy first to aim, or let it auto-target.',
+    'Melee enemies guard their allies behind them — clear the front line to reach the back.'
+  ];
+  hints.forEach((msg, i) => setTimeout(() => log(msg), 2800 + i * 3200));
+}
 </script>
 </body>
 </html>
