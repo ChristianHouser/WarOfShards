@@ -560,6 +560,60 @@ function assignEnemyArt(list) {
   });
 }
 
+// Tutorial Mission wave enemies (Sewer Rat, Sludge Slime, etc.) get their
+// own dedicated art per creature name, dropped in Character Artwork/Sewer/
+// <Name>/{Idle,Attack,Impact}.png — same triplet shape as the human
+// folders, so the same normalize_art.py pipeline applies unchanged. Since
+// there's no build step to check the filesystem, availability is tested
+// at runtime by trying to load each creature's Idle.png; any creature
+// whose art isn't in place yet (or isn't there at all) falls back to the
+// generic human Melee/Range art pool instead of a broken image.
+const SEWER_ART_FOLDERS = {
+  rat: 'Sewer Rat',
+  slime: 'Sludge Slime',
+  spitter: 'Slime Spitter',
+  beetle: 'Drain Beetle',
+  dungfly: 'Dung Fly',
+  thug: 'Sewer Thug',
+  crossbow: 'Crossbow Rat',
+  brute: 'Sewer Brute',
+  lord: 'The Sewer Lord'
+};
+function sewerArtPath(folder, file) { return encodeURI(`${ART_BASE}/Sewer/${folder}/${file}`); }
+
+let sewerArtAvailable = {};
+function testImageLoads(src) {
+  return new Promise(resolve => {
+    const img = new Image();
+    img.onload = () => resolve(true);
+    img.onerror = () => resolve(false);
+    img.src = src;
+  });
+}
+async function refreshSewerArtAvailability() {
+  const keys = Object.keys(SEWER_ART_FOLDERS);
+  const results = await Promise.all(keys.map(key => testImageLoads(sewerArtPath(SEWER_ART_FOLDERS[key], 'Idle.png'))));
+  keys.forEach((key, i) => { sewerArtAvailable[key] = results[i]; });
+}
+
+// Per-creature Sewer art where it's ready; anything not ready falls back
+// through the normal assignEnemyArt type-pool (still no repeats within
+// that fallback subset).
+function assignWaveEnemyArt(list) {
+  const fallback = [];
+  list.forEach(h => {
+    const folder = SEWER_ART_FOLDERS[h.waveKey];
+    if (folder && sewerArtAvailable[h.waveKey]) {
+      h.idleImg = sewerArtPath(folder, 'Idle.png');
+      h.impactImg = sewerArtPath(folder, 'Impact.png');
+      h.attackImg = sewerArtPath(folder, 'Attack.png');
+    } else {
+      fallback.push(h);
+    }
+  });
+  if (fallback.length > 0) assignEnemyArt(fallback);
+}
+
 // Players only ever show Portrait.png — no Idle/Impact/Attack states.
 function assignPlayerPortraits(list) {
   ['ranged', 'melee'].forEach(type => {
@@ -787,6 +841,7 @@ function createSewerHero(def, extra) {
   return {
     side: 'enemy',
     charId: def.key + '_' + Math.random().toString(36).slice(2, 8),
+    waveKey: def.key,
     name: def.name,
     type: def.type,
     color: COLORS[Math.floor(Math.random() * COLORS.length)],
@@ -867,7 +922,7 @@ function advanceToNextWave() {
   currentWaveIndex++;
   const wave = TUTORIAL_WAVES[currentWaveIndex];
   const enemyAll = buildWaveRoster(wave);
-  assignEnemyArt(enemyAll);
+  assignWaveEnemyArt(enemyAll);
   enemyRangedHeroes = enemyAll.filter(h => h.type === 'ranged');
   enemyMeleeHeroes = enemyAll.filter(h => h.type === 'melee');
   heroes = [...playerHeroes, ...enemyAll];
@@ -895,7 +950,7 @@ function buildArmies() {
   } else {
     enemyAll = buildSquadHeroes(buildRandomSquad(), 'enemy');
   }
-  assignEnemyArt(enemyAll);
+  if (waveMode) assignWaveEnemyArt(enemyAll); else assignEnemyArt(enemyAll);
   enemyRangedHeroes = enemyAll.filter(h => h.type === 'ranged');
   enemyMeleeHeroes = enemyAll.filter(h => h.type === 'melee');
   heroes = [...playerHeroes, ...enemyAll];
@@ -2024,23 +2079,34 @@ function attemptSwap(x1, y1, x2, y2) {
 }
 
 // ---------- INIT ----------
-applyRandomBattlefieldBackground();
-buildArmies();
-renderArmies();
-fillBoardNoMatches();
-renderBoard();
-updateTurnUI();
-log('Your turn — swap a tile to begin.');
+// Wave enemies' art availability has to be known *before* buildArmies()
+// assigns art, so a Tutorial Mission load waits on that one check first —
+// a few Idle.png HEAD-ish probes, not a real network wait for anyone not
+// in wave mode (readTutorialFlags() runs again inside buildArmies(), this
+// is just an early peek to decide whether to wait at all).
+(async function init() {
+  applyRandomBattlefieldBackground();
+  let tutorialFlagPeek = false;
+  try { tutorialFlagPeek = localStorage.getItem('warOfShards.tutorialMode') === '1'; } catch (e) {}
+  if (tutorialFlagPeek) await refreshSewerArtAvailability();
 
-if (waveMode && tutorialShowHints) {
-  const hints = [
-    'Swipe or tap two adjacent tiles to swap them — match 3+ of the same color to score.',
-    'Matched tiles turn into mana shards for your heroes of that color.',
-    'When a hero glows, tap it to attack — tap an enemy first to aim, or let it auto-target.',
-    'Melee enemies guard their allies behind them — clear the front line to reach the back.'
-  ];
-  hints.forEach((msg, i) => setTimeout(() => log(msg), 2800 + i * 3200));
-}
+  buildArmies();
+  renderArmies();
+  fillBoardNoMatches();
+  renderBoard();
+  updateTurnUI();
+  log('Your turn — swap a tile to begin.');
+
+  if (waveMode && tutorialShowHints) {
+    const hints = [
+      'Swipe or tap two adjacent tiles to swap them — match 3+ of the same color to score.',
+      'Matched tiles turn into mana shards for your heroes of that color.',
+      'When a hero glows, tap it to attack — tap an enemy first to aim, or let it auto-target.',
+      'Melee enemies guard their allies behind them — clear the front line to reach the back.'
+    ];
+    hints.forEach((msg, i) => setTimeout(() => log(msg), 2800 + i * 3200));
+  }
+})();
 </script>
 </body>
 </html>
