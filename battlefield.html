@@ -95,6 +95,44 @@
   }
   #win-banner.show { display: flex; }
 
+  /* Transient wave-transition banner (Tutorial Mission only) — unlike
+     #win-banner this never freezes input, it just announces the wave and
+     fades on its own. */
+  #wave-banner {
+    position: fixed;
+    left: 50%;
+    top: 18%;
+    transform: translate(-50%, -50%) scale(0.9);
+    z-index: 40;
+    pointer-events: none;
+    text-align: center;
+    background: #05070fd9;
+    border: 1px solid #3f7a4a;
+    border-radius: 10px;
+    padding: 8px 20px;
+    box-shadow: 0 4px 18px #000a;
+    opacity: 0;
+    transition: opacity 0.35s ease, transform 0.35s ease;
+  }
+  #wave-banner.show { opacity: 1; transform: translate(-50%, -50%) scale(1); }
+  #wave-banner .wb-eyebrow {
+    font-size: 0.64rem;
+    letter-spacing: 2px;
+    text-transform: uppercase;
+    font-weight: bold;
+    color: #7ee08a;
+  }
+  #wave-banner .wb-title {
+    margin-top: 2px;
+    font-size: 1.2rem;
+    font-weight: bold;
+    color: #ffd700;
+    text-shadow: 0 0 10px #0009;
+  }
+  #wave-banner.boss { border-color: #a53f3f; }
+  #wave-banner.boss .wb-eyebrow { color: #ff8080; }
+  #wave-banner.boss .wb-title { color: #ff5f5f; }
+
   /* ===== ZONES ===== */
   #enemy-zone {
     flex: 0 0 50%;
@@ -441,6 +479,7 @@
 </div>
 
 <div id="win-banner"></div>
+<div id="wave-banner"><div class="wb-eyebrow"></div><div class="wb-title"></div></div>
 
 <!-- Runic Crystal Choice Modal -->
 <div id="crystal-modal" class="modal">
@@ -807,6 +846,21 @@ function updateWaveLabel(wave) {
   label.textContent = waveMode ? `⚔ Enemy — Wave ${currentWaveIndex + 1}/${TUTORIAL_WAVES.length}: ${waveShortName(wave)}` : '⚔ Enemy';
 }
 
+// Big, non-blocking center-screen callout for the moment a wave begins —
+// the persistent zone-label text change alone is easy to miss mid-battle.
+let waveBannerTimer = null;
+function showWaveBanner(wave) {
+  const el = document.getElementById('wave-banner');
+  el.classList.toggle('boss', !!wave.isBoss);
+  el.querySelector('.wb-eyebrow').textContent = wave.isBoss
+    ? `Final Wave ${currentWaveIndex + 1} of ${TUTORIAL_WAVES.length}`
+    : `Wave ${currentWaveIndex + 1} of ${TUTORIAL_WAVES.length}`;
+  el.querySelector('.wb-title').textContent = waveShortName(wave);
+  el.classList.add('show');
+  clearTimeout(waveBannerTimer);
+  waveBannerTimer = setTimeout(() => el.classList.remove('show'), 2600);
+}
+
 // Swaps in the next wave's enemies while leaving the player's squad (and
 // its current HP/mana) untouched, then re-renders both rows.
 function advanceToNextWave() {
@@ -818,6 +872,7 @@ function advanceToNextWave() {
   enemyMeleeHeroes = enemyAll.filter(h => h.type === 'melee');
   heroes = [...playerHeroes, ...enemyAll];
   updateWaveLabel(wave);
+  showWaveBanner(wave);
   renderArmies();
   aimedTarget = null;
   refreshAimUI();
@@ -836,6 +891,7 @@ function buildArmies() {
     const wave = TUTORIAL_WAVES[0];
     enemyAll = buildWaveRoster(wave);
     updateWaveLabel(wave);
+    showWaveBanner(wave);
   } else {
     enemyAll = buildSquadHeroes(buildRandomSquad(), 'enemy');
   }
